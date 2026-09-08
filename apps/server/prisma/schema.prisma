@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Grid Nodes (Virtual Houses) ──────────────────────────
+model GridNode {
+  id                 String   @id @default(uuid())
+  name               String   @unique
+  emoji              String   @default("🏠")
+  solarCapacityKw    Float    @default(5.0)
+  batteryCapacityKwh Float    @default(10.0)
+  batteryChargeKwh   Float    @default(5.0)
+  baseLoadKw         Float    @default(1.5)
+  datasetProfileId   String   @default("default")
+  latitude           Float    @default(18.52)
+  longitude          Float    @default(73.85)
+  posX               Float    @default(0)
+  posY               Float    @default(0)
+  createdAt          DateTime @default(now())
+
+  wallet         Wallet?
+  ordersPlaced   Order[]        @relation("OrderPlacer")
+  tradesBuyer    Trade[]        @relation("TradeBuyer")
+  tradesSeller   Trade[]        @relation("TradeSeller")
+  meterReadings  MeterReading[]
+}
+
+// ─── Energy Meter Readings ────────────────────────────────
+model MeterReading {
+  id              String     @id @default(uuid())
+  nodeId          String
+  node            GridNode   @relation(fields: [nodeId], references: [id])
+  simulationTime  DateTime
+  generationKw    Float
+  consumptionKw   Float
+  netEnergyKw     Float
+  batteryKwh      Float
+  dataSource      DataSource @default(SIMULATION)
+  weatherFactor   Float      @default(1.0)
+  cloudCoverPct   Float?
+  solarRadiation  Float?
+  temperatureC    Float?
+  co2Intensity    Float?
+  createdAt       DateTime   @default(now())
+
+  @@index([nodeId, simulationTime])
+  @@index([simulationTime])
+}
+
+enum DataSource {
+  LIVE_API
+  DATASET
+  SIMULATION
+  HYBRID
+}
+
+// ─── Financial Wallets ────────────────────────────────────
+model Wallet {
+  id        String   @id @default(uuid())
+  nodeId    String   @unique
+  node      GridNode @relation(fields: [nodeId], references: [id])
+  createdAt DateTime @default(now())
+
+  postings  Posting[]
+
+  @@index([nodeId])
+}
+
+// ─── Orders (Bids & Asks) ─────────────────────────────────
+enum OrderSide {
+  BID
+  ASK
+}
+
+enum OrderStatus {
+  OPEN
+  PARTIALLY_FILLED
+  FILLED
+  CANCELLED
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  nodeId      String
+  node        GridNode    @relation("OrderPlacer", fields: [nodeId], references: [id])
+  side        OrderSide
+  pricePerKwh Decimal     @db.Decimal(10, 4)
+  quantityKwh Decimal     @db.Decimal(10, 4)
+  filledKwh   Decimal     @db.Decimal(10, 4) @default(0)
+  status      OrderStatus @default(OPEN)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tradesAsBid Trade[] @relation("TradeFromBid")
+  tradesAsAsk Trade[] @relation("TradeFromAsk")
+
+  @@index([side, status, pricePerKwh])
+  @@index([nodeId])
+}
+
+// ─── Executed Trades ──────────────────────────────────────
+model Trade {
+  id            String   @id @default(uuid())
+  bidOrderId    String
+  bidOrder      Order    @relation("TradeFromBid", fields: [bidOrderId], references: [id])
+  askOrderId    String
+  askOrder      Order    @relation("TradeFromAsk", fields: [askOrderId], references: [id])
+  buyerNodeId   String
+  buyerNode     GridNode @relation("TradeBuyer", fields: [buyerNodeId], references: [id])
+  sellerNodeId  String
+  sellerNode    GridNode @relation("TradeSeller", fields: [sellerNodeId], references: [id])
+
+  clearingPrice Decimal @db.Decimal(10, 4)
+  quantityKwh   Decimal @db.Decimal(10, 4)
+  totalCost     Decimal @db.Decimal(10, 4)
+  co2AvoidedKg  Decimal @db.Decimal(10, 4) @default(0)
+
+  transaction Transaction?
+  createdAt   DateTime     @default(now())
+
+  @@index([buyerNodeId])
+  @@index([sellerNodeId])
+  @@index([createdAt])
+}
+
+// ─── Double-Entry Financial Ledger ────────────────────────
+model Transaction {
+  id          String   @id @default(uuid())
+  tradeId     String?  @unique
+  trade       Trade?   @relation(fields: [tradeId], references: [id])
+  description String
+  createdAt   DateTime @default(now())
+
+  postings Posting[]
+}
+
+enum PostingType {
+  DEBIT
+  CREDIT
+}
+
+model Posting {
+  id            String      @id @default(uuid())
+  amount        Decimal     @db.Decimal(10, 4)
+  type          PostingType
+  walletId      String
+  wallet        Wallet      @relation(fields: [walletId], references: [id])
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  createdAt     DateTime    @default(now())
+
+  @@index([walletId])
+  @@index([transactionId])
+}
+
+// ─── Weather Events ───────────────────────────────────────
+model WeatherEvent {
+  id           String     @id @default(uuid())
+  type         String
+  description  String
+  source       DataSource
+  impactFactor Float
+  startTime    DateTime
+  durationMs   Int
+  createdAt    DateTime   @default(now())
+
+  @@index([startTime])
+}
+
+// ─── API Data Cache ───────────────────────────────────────
+model ApiCache {
+  id           String   @id @default(uuid())
+  provider     String
+  endpoint     String
+  responseJson String
+  fetchedAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@unique([provider, endpoint])
+  @@index([expiresAt])
+}

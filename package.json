@@ -1,0 +1,21 @@
+{
+  "name": "gridpulse",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Decentralized P2P Renewable Energy Trading Platform & Virtual Microgrid Simulator",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "db:migrate": "cd apps/server && npx prisma migrate dev",
+    "db:seed": "cd apps/server && npx prisma db seed",
+    "db:studio": "cd apps/server && npx prisma studio",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "setup": "pnpm install && pnpm docker:up && sleep 3 && pnpm db:migrate && pnpm db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0"
+  },
+  "packageManager": "pnpm@9.1.0"
+}

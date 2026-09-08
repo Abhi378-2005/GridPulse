@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+.next/
+dist/
+.turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+prisma/*.db
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kaggle data (large files)
+apps/server/src/data/profiles/*.csv
+!apps/server/src/data/profiles/.gitkeep
+
+# Logs
+*.log
+npm-debug.log*
