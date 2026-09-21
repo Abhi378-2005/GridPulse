@@ -160,15 +160,31 @@ export class WalletService {
   }
 
   /**
-   * Get all wallet balances.
+   * Get all wallet balances efficiently with a single query.
    */
   static async getAllBalances(): Promise<Map<string, number>> {
-    const wallets = await prisma.wallet.findMany();
     const balances = new Map<string, number>();
 
+    // Single query: aggregate all postings grouped by wallet's nodeId
+    const wallets = await prisma.wallet.findMany({
+      include: {
+        postings: {
+          select: { amount: true, type: true },
+        },
+      },
+    });
+
     for (const wallet of wallets) {
-      const balance = await WalletService.getBalance(wallet.nodeId);
-      balances.set(wallet.nodeId, balance);
+      let credits = new Decimal(0);
+      let debits = new Decimal(0);
+      for (const posting of wallet.postings) {
+        if (posting.type === 'CREDIT') {
+          credits = credits.plus(posting.amount.toString());
+        } else {
+          debits = debits.plus(posting.amount.toString());
+        }
+      }
+      balances.set(wallet.nodeId, credits.minus(debits).toNumber());
     }
 
     return balances;

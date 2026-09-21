@@ -12,6 +12,8 @@ import type {
   SimControlAction,
   GridNodeState,
   SimulationState,
+  NodeConfigUpdate,
+  AddNodeRequest,
 } from '@gridpulse/shared';
 
 export function useSocket() {
@@ -93,6 +95,18 @@ export function useSocket() {
     socketRef.current.emit('simulation:control', action);
   }, []);
 
+  const sendNodeConfig = useCallback((update: NodeConfigUpdate) => {
+    socketRef.current.emit('node:updateConfig', update);
+  }, []);
+
+  const sendAddNode = useCallback((request: AddNodeRequest) => {
+    socketRef.current.emit('node:add', request);
+  }, []);
+
+  const sendLocation = useCallback((latitude: number, longitude: number, label: string) => {
+    socketRef.current.emit('location:set', { latitude, longitude, label });
+  }, []);
+
   return {
     isConnected,
     simState,
@@ -103,5 +117,9 @@ export function useSocket() {
     liveWeather,
     weatherEvents,
     sendControl,
+    sendNodeConfig,
+    sendAddNode,
+    sendLocation,
   };
 }
+

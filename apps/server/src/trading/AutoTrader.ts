@@ -1,6 +1,10 @@
 import { TRADING } from '@gridpulse/shared';
+import type { TradeData } from '@gridpulse/shared';
 import { randomBetween, roundTo } from '../utils/math';
 import { MatchingEngine } from './MatchingEngine';
+
+/** Callback invoked for each executed trade so the engine can track metrics. */
+export type OnTradeCallback = (trade: TradeData) => void;
 
 /**
  * AutoTrader — AI agent that automatically places orders for each node.
@@ -9,9 +13,15 @@ import { MatchingEngine } from './MatchingEngine';
  */
 export class AutoTrader {
   private matchingEngine: MatchingEngine;
+  private onTrade: OnTradeCallback | null = null;
 
   constructor(matchingEngine: MatchingEngine) {
     this.matchingEngine = matchingEngine;
+  }
+
+  /** Register a callback to be notified of every executed trade. */
+  setOnTrade(callback: OnTradeCallback): void {
+    this.onTrade = callback;
   }
 
   /**
@@ -42,9 +52,12 @@ export class AutoTrader {
       );
 
       try {
-        await this.matchingEngine.submitOrder(nodeId, 'ASK', askPrice, roundTo(energyKwh, 4));
+        const result = await this.matchingEngine.submitOrder(nodeId, 'ASK', askPrice, roundTo(energyKwh, 4));
+        for (const trade of result.trades) {
+          this.onTrade?.(trade);
+        }
       } catch (e) {
-        // Silently handle — order might fail validation
+        console.warn(`⚠️  AutoTrader ASK failed for ${nodeId}:`, (e as Error).message);
       }
     } else if (netEnergyKw < 0) {
       // Node has deficit → BUY (place BID)
@@ -58,9 +71,12 @@ export class AutoTrader {
       );
 
       try {
-        await this.matchingEngine.submitOrder(nodeId, 'BID', bidPrice, roundTo(energyKwh, 4));
+        const result = await this.matchingEngine.submitOrder(nodeId, 'BID', bidPrice, roundTo(energyKwh, 4));
+        for (const trade of result.trades) {
+          this.onTrade?.(trade);
+        }
       } catch (e) {
-        // Silently handle
+        console.warn(`⚠️  AutoTrader BID failed for ${nodeId}:`, (e as Error).message);
       }
     }
   }

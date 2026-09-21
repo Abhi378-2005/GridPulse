@@ -7,11 +7,13 @@ import { SimulationEngine } from './engine/SimulationEngine';
 import { setupSocketHandlers } from './socket/handlers';
 import { createSimulationRouter } from './routes/simulation';
 import { createAnalyticsRouter } from './routes/analytics';
+import { prisma } from './config/database';
 
 dotenv.config({ path: '../../.env' });
 dotenv.config(); // Also check local .env
 
 const PORT = process.env.SERVER_PORT || 3001;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 
 async function main() {
   console.log('\n⚡ ═══════════════════════════════════════');
@@ -20,7 +22,7 @@ async function main() {
 
   // Express app
   const app = express();
-  app.use(cors({ origin: '*' }));
+  app.use(cors({ origin: CORS_ORIGIN }));
   app.use(express.json());
 
   // HTTP server
@@ -28,7 +30,7 @@ async function main() {
 
   // Socket.io
   const io = new SocketServer(httpServer, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] },
   });
 
   // Initialize simulation engine
@@ -62,9 +64,24 @@ async function main() {
     console.log('▶️  Simulation auto-started in DEMO mode');
     console.log('   Visit the frontend dashboard to see it live!\n');
   });
+
+  // Graceful shutdown
+  const shutdown = async (signal: string) => {
+    console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+    simEngine.pause();
+    io.close();
+    httpServer.close();
+    await prisma.$disconnect();
+    console.log('👋 Goodbye!');
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 main().catch((err) => {
   console.error('❌ Server startup failed:', err);
   process.exit(1);
 });
+

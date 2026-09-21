@@ -12,9 +12,11 @@ import { useTheme } from 'next-themes';
 interface GridTopologyProps {
   nodes: GridNodeState[];
   recentTrades: TradeData[];
+  onNodeClick?: (node: GridNodeState) => void;
+  selectedNodeId?: string;
 }
 
-function HouseNodeContent({ data }: { data: GridNodeState }) {
+function HouseNodeContent({ data, isSelected }: { data: GridNodeState; isSelected?: boolean }) {
   const isProducer = data.netEnergyKw > 0;
   const isConsumer = data.netEnergyKw < 0;
   const batteryPct = data.batteryCapacityKwh > 0
@@ -29,6 +31,7 @@ function HouseNodeContent({ data }: { data: GridNodeState }) {
         ${isProducer ? 'border-emerald-500/50 shadow-emerald-500/20' : ''}
         ${isConsumer ? 'border-blue-500/50 shadow-blue-500/20' : ''}
         ${!isProducer && !isConsumer ? 'border-border' : ''}
+        ${isSelected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}
       `}
     >
       {/* Header */}
@@ -100,7 +103,17 @@ function HouseNodeContent({ data }: { data: GridNodeState }) {
   );
 }
 
-export function GridTopology({ nodes, recentTrades }: GridTopologyProps) {
+/** Deterministic hash for two node IDs, returns value in [0, 1). */
+function hashPair(a: string, b: string): number {
+  const str = a < b ? `${a}-${b}` : `${b}-${a}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return (Math.abs(hash) % 1000) / 1000;
+}
+
+export function GridTopology({ nodes, recentTrades, onNodeClick, selectedNodeId }: GridTopologyProps) {
   const { theme } = useTheme();
 
   // Build React Flow nodes and edges
@@ -157,7 +170,7 @@ export function GridTopology({ nodes, recentTrades }: GridTopologyProps) {
     if (nodes.length >= 2) {
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
-          if (Math.random() < 0.35) { // ~35% connectivity
+          if (hashPair(nodes[i].id, nodes[j].id) < 0.35) { // ~35% deterministic connectivity
             meshEdges.push({
               id: `mesh-${i}-${j}`,
               source: nodes[i].id,
@@ -174,8 +187,10 @@ export function GridTopology({ nodes, recentTrades }: GridTopologyProps) {
   }, [nodes, recentTrades, theme]);
 
   const nodeTypes = useMemo(() => ({
-    houseNode: ({ data }: { data: GridNodeState }) => <HouseNodeContent data={data} />,
-  }), []);
+    houseNode: ({ data }: { data: GridNodeState }) => (
+      <HouseNodeContent data={data} isSelected={selectedNodeId === data.id} />
+    ),
+  }), [selectedNodeId]);
 
   if (nodes.length === 0) {
     return (
@@ -210,6 +225,10 @@ export function GridTopology({ nodes, recentTrades }: GridTopologyProps) {
           defaultEdgeOptions={{ animated: false }}
           minZoom={0.3}
           maxZoom={1.5}
+          onNodeClick={(_event, node) => {
+            const nodeData = nodes.find(n => n.id === node.id);
+            if (nodeData && onNodeClick) onNodeClick(nodeData);
+          }}
         >
           <Background color={theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} gap={40} />
         </ReactFlow>

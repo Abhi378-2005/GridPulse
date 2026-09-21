@@ -2,6 +2,13 @@ import { Router } from 'express';
 import { prisma } from '../config/database';
 import { WalletService } from '../ledger/LedgerService';
 
+/** Parse and clamp a numeric query param within safe bounds. */
+function parseIntParam(value: unknown, defaultVal: number, min: number, max: number): number {
+  const parsed = parseInt(value as string, 10);
+  if (isNaN(parsed)) return defaultVal;
+  return Math.max(min, Math.min(max, parsed));
+}
+
 export function createAnalyticsRouter(): Router {
   const router = Router();
 
@@ -17,19 +24,26 @@ export function createAnalyticsRouter(): Router {
     }
   });
 
-  // GET /api/analytics/trades
+  // GET /api/analytics/trades?limit=50&offset=0
   router.get('/trades', async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 50;
-      const trades = await prisma.trade.findMany({
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        include: {
-          buyerNode: true,
-          sellerNode: true,
-        },
-      });
-      res.json(trades);
+      const limit = parseIntParam(req.query.limit, 50, 1, 500);
+      const offset = parseIntParam(req.query.offset, 0, 0, 100000);
+
+      const [trades, total] = await Promise.all([
+        prisma.trade.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+          include: {
+            buyerNode: true,
+            sellerNode: true,
+          },
+        }),
+        prisma.trade.count(),
+      ]);
+
+      res.json({ trades, total, limit, offset });
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch trades' });
     }
@@ -47,14 +61,22 @@ export function createAnalyticsRouter(): Router {
     }
   });
 
-  // GET /api/analytics/readings/:nodeId
+  // GET /api/analytics/readings/:nodeId?limit=100&offset=0
   router.get('/readings/:nodeId', async (req, res) => {
     try {
-      const limit = parseInt(req.query.limit as string) || 100;
+      const { nodeId } = req.params;
+      if (!nodeId || typeof nodeId !== 'string') {
+        return res.status(400).json({ error: 'nodeId is required' });
+      }
+
+      const limit = parseIntParam(req.query.limit, 100, 1, 1000);
+      const offset = parseIntParam(req.query.offset, 0, 0, 100000);
+
       const readings = await prisma.meterReading.findMany({
-        where: { nodeId: req.params.nodeId },
+        where: { nodeId },
         orderBy: { simulationTime: 'desc' },
         take: limit,
+        skip: offset,
       });
       res.json(readings);
     } catch (error) {
@@ -64,3 +86,4 @@ export function createAnalyticsRouter(): Router {
 
   return router;
 }
+

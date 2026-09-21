@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect, useId } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { GridNodeState } from '@gridpulse/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/Card';
@@ -11,20 +11,22 @@ interface EnergyChartsProps {
   simTime: string | undefined;
 }
 
-// Keep a rolling history for the chart
 const MAX_HISTORY = 60;
-let chartHistory: Array<{
+
+interface ChartDataPoint {
   time: string;
   totalGen: number;
   totalCon: number;
   netEnergy: number;
-}> = [];
+}
 
 export function EnergyCharts({ nodes, simTime }: EnergyChartsProps) {
   const { theme } = useTheme();
+  const historyRef = useRef<ChartDataPoint[]>([]);
+  const chartId = useId(); // Unique ID to avoid gradient collisions
 
-  // Update history
-  useMemo(() => {
+  // Update history via useEffect (proper side effect handling)
+  useEffect(() => {
     if (nodes.length === 0 || !simTime) return;
 
     const totalGen = nodes.reduce((sum, n) => sum + n.generationKw, 0);
@@ -35,19 +37,23 @@ export function EnergyCharts({ nodes, simTime }: EnergyChartsProps) {
       hour12: false,
     });
 
-    chartHistory.push({
+    historyRef.current.push({
       time: timeLabel,
       totalGen: parseFloat(totalGen.toFixed(1)),
       totalCon: parseFloat(totalCon.toFixed(1)),
       netEnergy: parseFloat((totalGen - totalCon).toFixed(1)),
     });
 
-    if (chartHistory.length > MAX_HISTORY) {
-      chartHistory = chartHistory.slice(-MAX_HISTORY);
+    if (historyRef.current.length > MAX_HISTORY) {
+      historyRef.current = historyRef.current.slice(-MAX_HISTORY);
     }
   }, [nodes, simTime]);
 
-  const data = [...chartHistory];
+  const data = [...historyRef.current];
+
+  // Use unique IDs for gradients to avoid collisions across instances
+  const genGradientId = `genGradient-${chartId}`;
+  const conGradientId = `conGradient-${chartId}`;
 
   const genColor = theme === 'dark' ? '#10b981' : '#059669'; // Emerald
   const conColor = theme === 'dark' ? '#3b82f6' : '#2563eb'; // Blue
@@ -65,11 +71,11 @@ export function EnergyCharts({ nodes, simTime }: EnergyChartsProps) {
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
             <defs>
-              <linearGradient id="genGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={genGradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={genColor} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={genColor} stopOpacity={0} />
               </linearGradient>
-              <linearGradient id="conGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={conGradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={conColor} stopOpacity={0.3} />
                 <stop offset="95%" stopColor={conColor} stopOpacity={0} />
               </linearGradient>
@@ -102,7 +108,7 @@ export function EnergyCharts({ nodes, simTime }: EnergyChartsProps) {
               dataKey="totalGen"
               name="Generation"
               stroke={genColor}
-              fill="url(#genGradient)"
+              fill={`url(#${genGradientId})`}
               strokeWidth={2}
             />
             <Area
@@ -110,7 +116,7 @@ export function EnergyCharts({ nodes, simTime }: EnergyChartsProps) {
               dataKey="totalCon"
               name="Consumption"
               stroke={conColor}
-              fill="url(#conGradient)"
+              fill={`url(#${conGradientId})`}
               strokeWidth={2}
             />
             <Legend
@@ -123,3 +129,4 @@ export function EnergyCharts({ nodes, simTime }: EnergyChartsProps) {
     </Card>
   );
 }
+

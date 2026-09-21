@@ -75,13 +75,15 @@ export function Header({
         </AnimatePresence>
 
         {/* Mode Selector */}
-        <div className="hidden md:flex items-center rounded-md border p-1 bg-muted/30">
+        <div className="hidden md:flex items-center rounded-md border p-1 bg-muted/30" role="group" aria-label="Data mode selector">
           {(['DEMO', 'REPLAY', 'LIVE'] as DataMode[]).map(mode => {
             const isActive = simState?.mode === mode;
             return (
               <button
                 key={mode}
                 onClick={() => onModeChange(mode)}
+                aria-pressed={isActive}
+                aria-label={`Switch to ${mode} mode`}
                 className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
                   isActive
                     ? 'bg-background shadow-sm text-foreground'
@@ -101,6 +103,7 @@ export function Header({
             size="sm"
             onClick={onPauseResume}
             className="w-24"
+            aria-label={simState?.isRunning ? 'Pause simulation' : 'Resume simulation'}
           >
             {simState?.isRunning ? '⏸ Pause' : '▶ Resume'}
           </Button>
@@ -108,6 +111,7 @@ export function Header({
             variant="destructive"
             size="sm"
             onClick={onTriggerHeatwave}
+            aria-label="Trigger a heatwave weather event"
           >
             ⚡ Heatwave
           </Button>
@@ -123,11 +127,13 @@ export function Header({
               {virtualTime}
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" role="group" aria-label="Simulation speed">
             {speedPresets.map(speed => (
               <button
                 key={speed}
                 onClick={() => onSpeedChange(speed)}
+                aria-label={`Set speed to ${speed}x`}
+                aria-pressed={simState?.speed === speed}
                 className={`px-1.5 py-0.5 text-[10px] font-mono rounded transition-colors ${
                   simState?.speed === speed
                     ? 'bg-primary/10 text-primary font-bold'
@@ -144,7 +150,11 @@ export function Header({
           <ThemeToggle />
           
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+            <div
+              className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}
+              role="status"
+              aria-label={isConnected ? 'Server connected' : 'Server disconnected'}
+            />
           </div>
         </div>
       </div>

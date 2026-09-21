@@ -93,7 +93,7 @@ export function ImpactMetrics({ metrics }: ImpactMetricsProps) {
                 <span className="font-mono text-lg font-bold text-foreground">
                   {metrics?.nodesOnline || 0}
                 </span>
-                <span className="text-muted-foreground text-xs">/ 8</span>
+                <span className="text-muted-foreground text-xs">online</span>
               </div>
             </CardContent>
           </Card>

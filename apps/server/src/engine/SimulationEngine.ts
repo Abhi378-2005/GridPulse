@@ -1,6 +1,6 @@
 import { prisma } from '../config/database';
-import { SIM_DEFAULTS, TRADING } from '@gridpulse/shared';
-import type { DataMode, SimulationState, SimulationTickPayload, GridNodeState, AggregateMetrics, TradeData, WeatherEventData } from '@gridpulse/shared';
+import { SIM_DEFAULTS, TRADING, FINANCE } from '@gridpulse/shared';
+import type { DataMode, SimulationState, SimulationTickPayload, GridNodeState, AggregateMetrics, TradeData, WeatherEventData, NodeConfigUpdate, AddNodeRequest } from '@gridpulse/shared';
 import { DataFusionEngine } from './DataFusionEngine';
 import { MatchingEngine } from '../trading/MatchingEngine';
 import { AutoTrader } from '../trading/AutoTrader';
@@ -32,6 +32,9 @@ export class SimulationEngine {
   private totalTradesCount: number = 0;
   private recentTrades: TradeData[] = [];
 
+  // Node overrides (stress-test toggles)
+  private overrides: Map<string, { forceZeroGeneration: boolean; forceMaxLoad: boolean }> = new Map();
+
   // Node configs (loaded from DB)
   private nodes: Array<{
     id: string;
@@ -49,9 +52,12 @@ export class SimulationEngine {
     this.matchingEngine = new MatchingEngine();
     this.autoTrader = new AutoTrader(this.matchingEngine);
 
-    // Start at 6:00 AM for a nice sunrise experience
+    // Wire up trade callback so metrics accumulate
+    this.autoTrader.setOnTrade((trade) => this.recordTrade(trade));
+
+    // Start at 8:00 AM so the sun is up and there's a good solar surplus for demos
     this.virtualTime = new Date();
-    this.virtualTime.setHours(6, 0, 0, 0);
+    this.virtualTime.setHours(8, 0, 0, 0);
   }
 
   /**
@@ -130,6 +136,131 @@ export class SimulationEngine {
   }
 
   /**
+   * Update a node's configuration in real-time (from interactive sliders).
+   */
+  updateNodeConfig(update: NodeConfigUpdate): void {
+    const node = this.nodes.find(n => n.id === update.nodeId);
+    if (!node) return;
+
+    switch (update.field) {
+      case 'baseLoadKw':
+        node.baseLoadKw = Math.max(0.1, Math.min(10, update.value));
+        console.log(`🔧 ${node.name} base load → ${node.baseLoadKw} kW`);
+        break;
+      case 'solarCapacityKw':
+        node.solarCapacityKw = Math.max(0, Math.min(20, update.value));
+        console.log(`☀️ ${node.name} solar capacity → ${node.solarCapacityKw} kW`);
+        break;
+      case 'forceZeroGeneration': {
+        const overrides = this.overrides.get(update.nodeId) || { forceZeroGeneration: false, forceMaxLoad: false };
+        overrides.forceZeroGeneration = update.value === 1;
+        this.overrides.set(update.nodeId, overrides);
+        console.log(`⚡ ${node.name} forceZeroGeneration → ${overrides.forceZeroGeneration}`);
+        break;
+      }
+      case 'forceMaxLoad': {
+        const overrides = this.overrides.get(update.nodeId) || { forceZeroGeneration: false, forceMaxLoad: false };
+        overrides.forceMaxLoad = update.value === 1;
+        this.overrides.set(update.nodeId, overrides);
+        console.log(`🔥 ${node.name} forceMaxLoad → ${overrides.forceMaxLoad}`);
+        break;
+      }
+    }
+
+    // Broadcast update to all clients
+    if (this.io) {
+      this.io.emit('node:configUpdated', { nodeId: update.nodeId, field: update.field, value: update.value });
+    }
+  }
+
+  /**
+   * Dynamically add a new node to the running simulation.
+   */
+  async addNode(request: AddNodeRequest): Promise<GridNodeState | null> {
+    try {
+      // Create in database
+      const dbNode = await prisma.gridNode.create({
+        data: {
+          name: request.name,
+          emoji: request.emoji,
+          solarCapacityKw: request.solarCapacity,
+          batteryCapacityKwh: request.batteryCapacity,
+          batteryChargeKwh: request.batteryCapacity * 0.5,
+          baseLoadKw: request.baseLoad,
+          datasetProfileId: request.name.toLowerCase(),
+          posX: 200 + Math.random() * 400,
+          posY: 100 + Math.random() * 400,
+        },
+      });
+
+      // Create wallet
+      await prisma.wallet.create({ data: { nodeId: dbNode.id } });
+
+      // Seed initial balance
+      const wallet = await prisma.wallet.findUnique({ where: { nodeId: dbNode.id } });
+      if (wallet) {
+        await prisma.transaction.create({
+          data: {
+            description: `Initial deposit for ${request.name}`,
+            postings: { create: { amount: FINANCE.INITIAL_WALLET_BALANCE, type: 'CREDIT', walletId: wallet.id } },
+          },
+        });
+      }
+
+      // Add to in-memory simulation
+      const newNode = {
+        id: dbNode.id,
+        name: dbNode.name,
+        emoji: dbNode.emoji,
+        solarCapacityKw: dbNode.solarCapacityKw,
+        batteryCapacityKwh: dbNode.batteryCapacityKwh,
+        batteryChargeKwh: dbNode.batteryChargeKwh,
+        baseLoadKw: dbNode.baseLoadKw,
+        datasetProfileId: dbNode.datasetProfileId,
+      };
+      this.nodes.push(newNode);
+      this.matchingEngine.setNodeInfo(newNode.id, newNode.name, newNode.emoji);
+
+      console.log(`➕ Added node: ${request.emoji} ${request.name}`);
+
+      // Return as a GridNodeState for broadcasting
+      const nodeState: GridNodeState = {
+        id: dbNode.id,
+        name: dbNode.name,
+        emoji: dbNode.emoji,
+        solarCapacityKw: dbNode.solarCapacityKw,
+        batteryCapacityKwh: dbNode.batteryCapacityKwh,
+        batteryChargeKwh: dbNode.batteryChargeKwh,
+        baseLoadKw: dbNode.baseLoadKw,
+        posX: dbNode.posX,
+        posY: dbNode.posY,
+        generationKw: 0,
+        consumptionKw: 0,
+        netEnergyKw: 0,
+        weatherFactor: 1,
+        dataSource: 'SIMULATION',
+      };
+
+      if (this.io) {
+        this.io.emit('node:added', nodeState);
+      }
+
+      return nodeState;
+    } catch (error) {
+      console.error('Failed to add node:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Set the location for LIVE mode weather API calls.
+   */
+  setLocation(latitude: number, longitude: number, label: string): void {
+    this.dataFusion.setLocation(latitude, longitude);
+    console.log(`📍 Location set to ${label} (${latitude}, ${longitude})`);
+  }
+
+  /**
    * Trigger a weather event (e.g., heatwave button).
    */
   triggerEvent(eventType: string): void {
@@ -203,6 +334,14 @@ export class SimulationEngine {
       );
 
       // Build node state for frontend
+      // Apply overrides
+      const nodeOverrides = this.overrides.get(node.id);
+      let genKw = reading.generationKw;
+      let conKw = reading.consumptionKw;
+      if (nodeOverrides?.forceZeroGeneration) genKw = 0;
+      if (nodeOverrides?.forceMaxLoad) conKw = node.baseLoadKw * 4;
+      const netKw = nodeOverrides ? (genKw - conKw) : reading.netEnergyKw;
+
       nodeStates.push({
         id: node.id,
         name: node.name,
@@ -212,15 +351,15 @@ export class SimulationEngine {
         batteryChargeKwh: reading.batteryKwh,
         baseLoadKw: node.baseLoadKw,
         posX: 0, posY: 0, // Frontend handles positioning
-        generationKw: reading.generationKw,
-        consumptionKw: reading.consumptionKw,
-        netEnergyKw: reading.netEnergyKw,
+        generationKw: genKw,
+        consumptionKw: conKw,
+        netEnergyKw: netKw,
         weatherFactor: reading.weatherFactor,
         dataSource: reading.dataSource,
       });
 
       // 3. AutoTrader places orders based on net energy
-      await this.autoTrader.placeOrders(node.id, reading.netEnergyKw, tickDurationHours);
+      await this.autoTrader.placeOrders(node.id, netKw, tickDurationHours);
     }
 
     // 4. Collect trades that happened during matching

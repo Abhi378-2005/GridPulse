@@ -185,4 +185,12 @@ export class DataFusionEngine {
   getBatteryLevel(nodeId: string): number {
     return this.batteryStates.get(nodeId) || 0;
   }
+
+  /**
+   * Update the location for live weather API calls.
+   */
+  setLocation(latitude: number, longitude: number): void {
+    this.openMeteo = new OpenMeteoService(latitude, longitude);
+    console.log(`📍 Weather location updated to (${latitude}, ${longitude})`);
+  }
 }

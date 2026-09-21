@@ -137,10 +137,32 @@ export interface ServerToClientEvents {
   'weather:event': (event: WeatherEventData) => void;
   'weather:live': (data: LiveWeatherData) => void;
   'metrics:update': (metrics: AggregateMetrics) => void;
+  'node:added': (node: GridNodeState) => void;
+  'node:configUpdated': (update: { nodeId: string; field: string; value: number }) => void;
+  'simulation:state': (state: SimulationState) => void;
+  'error': (error: { message: string }) => void;
 }
 
 export interface ClientToServerEvents {
   'simulation:control': (action: SimControlAction) => void;
+  'node:updateConfig': (update: NodeConfigUpdate) => void;
+  'node:add': (request: AddNodeRequest) => void;
+  'location:set': (location: { latitude: number; longitude: number; label: string }) => void;
+}
+
+// ─── Node Interactivity ────────────────────────────────────
+export interface NodeConfigUpdate {
+  nodeId: string;
+  field: 'baseLoadKw' | 'solarCapacityKw' | 'forceZeroGeneration' | 'forceMaxLoad';
+  value: number; // For sliders: the new numeric value. For toggles: 1 = on, 0 = off
+}
+
+export interface AddNodeRequest {
+  name: string;
+  emoji: string;
+  solarCapacity: number;
+  batteryCapacity: number;
+  baseLoad: number;
 }
 
 export type SimControlAction =
@@ -149,3 +171,4 @@ export type SimControlAction =
   | { type: 'resume' }
   | { type: 'setMode'; mode: DataMode }
   | { type: 'triggerEvent'; eventType: string };
+
