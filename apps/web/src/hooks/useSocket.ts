@@ -126,6 +126,7 @@ export function useSocket() {
     weatherEvents,
     sendControl,
     sendNodeConfig,
+    sendNodeNameUpdate,
     sendAddNode,
     sendLocation,
   };
