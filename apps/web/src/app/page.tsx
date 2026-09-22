@@ -28,6 +28,7 @@ export default function Dashboard() {
     weatherEvents,
     sendControl,
     sendNodeConfig,
+    sendNodeNameUpdate,
     sendAddNode,
     sendLocation,
   } = useSocket();
@@ -191,6 +192,7 @@ export default function Dashboard() {
             node={selectedNode}
             onClose={handleCloseNodePanel}
             onUpdateConfig={sendNodeConfig}
+            onUpdateName={sendNodeNameUpdate}
           />
         </main>
       </div>

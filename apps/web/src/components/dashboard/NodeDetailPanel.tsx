@@ -2,20 +2,23 @@
 
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sun, Zap, AlertTriangle, Battery, Gauge } from 'lucide-react';
+import { X, Sun, Zap, AlertTriangle, Battery, Gauge, Pencil, Check } from 'lucide-react';
 import type { GridNodeState, NodeConfigUpdate } from '@gridpulse/shared';
 
 interface NodeDetailPanelProps {
   node: GridNodeState | null;
   onClose: () => void;
   onUpdateConfig: (update: NodeConfigUpdate) => void;
+  onUpdateName?: (nodeId: string, name: string) => void;
 }
 
-export function NodeDetailPanel({ node, onClose, onUpdateConfig }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ node, onClose, onUpdateConfig, onUpdateName }: NodeDetailPanelProps) {
   const [localSolar, setLocalSolar] = useState<number | null>(null);
   const [localLoad, setLocalLoad] = useState<number | null>(null);
   const [zeroGen, setZeroGen] = useState(false);
   const [maxLoad, setMaxLoad] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
 
   // Reset local state when node changes
   const solarValue = localSolar ?? node?.solarCapacityKw ?? 5;
@@ -55,6 +58,28 @@ export function NodeDetailPanel({ node, onClose, onUpdateConfig }: NodeDetailPan
     ? ((node.batteryChargeKwh / node.batteryCapacityKwh) * 100).toFixed(0)
     : '0';
 
+  const handleStartEditName = useCallback(() => {
+    if (node) {
+      setEditNameValue(node.name);
+      setIsEditingName(true);
+    }
+  }, [node]);
+
+  const handleSaveName = useCallback(() => {
+    if (node && editNameValue.trim() && editNameValue.trim() !== node.name) {
+      onUpdateName?.(node.id, editNameValue.trim());
+    }
+    setIsEditingName(false);
+  }, [node, editNameValue, onUpdateName]);
+
+  const handleKeyDownName = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSaveName();
+    } else if (e.key === 'Escape') {
+      setIsEditingName(false);
+    }
+  }, [handleSaveName]);
+
   return (
     <AnimatePresence>
       {node && (
@@ -69,8 +94,29 @@ export function NodeDetailPanel({ node, onClose, onUpdateConfig }: NodeDetailPan
           <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-border p-4 flex items-center justify-between z-10">
             <div className="flex items-center gap-2">
               <span className="text-xl">{node.emoji}</span>
-              <div>
-                <h2 className="text-sm font-bold text-foreground">{node.name}</h2>
+              <div className="flex flex-col">
+                {isEditingName ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={editNameValue}
+                      onChange={e => setEditNameValue(e.target.value)}
+                      onKeyDown={handleKeyDownName}
+                      onBlur={handleSaveName}
+                      autoFocus
+                      className="text-sm font-bold bg-muted/50 border border-primary/50 rounded px-1 py-0.5 outline-none w-28 text-foreground"
+                      maxLength={20}
+                    />
+                    <button onClick={handleSaveName} className="text-primary hover:bg-primary/10 p-0.5 rounded transition-colors">
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 group cursor-pointer" onClick={handleStartEditName}>
+                    <h2 className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{node.name}</h2>
+                    <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                )}
                 <span className="text-[10px] text-muted-foreground font-mono">{node.id.slice(0, 8)}...</span>
               </div>
             </div>

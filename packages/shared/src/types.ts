@@ -139,6 +139,7 @@ export interface ServerToClientEvents {
   'metrics:update': (metrics: AggregateMetrics) => void;
   'node:added': (node: GridNodeState) => void;
   'node:configUpdated': (update: { nodeId: string; field: string; value: number }) => void;
+  'node:nameUpdated': (update: { nodeId: string; name: string }) => void;
   'simulation:state': (state: SimulationState) => void;
   'error': (error: { message: string }) => void;
 }
@@ -146,6 +147,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   'simulation:control': (action: SimControlAction) => void;
   'node:updateConfig': (update: NodeConfigUpdate) => void;
+  'node:updateName': (update: { nodeId: string; name: string }) => void;
   'node:add': (request: AddNodeRequest) => void;
   'location:set': (location: { latitude: number; longitude: number; label: string }) => void;
 }

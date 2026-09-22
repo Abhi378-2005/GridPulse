@@ -76,6 +76,9 @@ export function useSocket() {
     socket.on('metrics:update', onMetricsUpdate);
     socket.on('weather:event', onWeatherEvent);
     socket.on('weather:live', onWeatherLive);
+    socket.on('node:nameUpdated', (update: { nodeId: string; name: string }) => {
+      setNodes(prev => prev.map(n => n.id === update.nodeId ? { ...n, name: update.name } : n));
+    });
 
     if (socket.connected) setIsConnected(true);
 
@@ -88,6 +91,7 @@ export function useSocket() {
       socket.off('metrics:update', onMetricsUpdate);
       socket.off('weather:event', onWeatherEvent);
       socket.off('weather:live', onWeatherLive);
+      socket.off('node:nameUpdated');
     };
   }, []);
 
@@ -97,6 +101,10 @@ export function useSocket() {
 
   const sendNodeConfig = useCallback((update: NodeConfigUpdate) => {
     socketRef.current.emit('node:updateConfig', update);
+  }, []);
+
+  const sendNodeNameUpdate = useCallback((nodeId: string, name: string) => {
+    socketRef.current.emit('node:updateName', { nodeId, name });
   }, []);
 
   const sendAddNode = useCallback((request: AddNodeRequest) => {

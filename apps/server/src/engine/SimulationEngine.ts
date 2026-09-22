@@ -136,6 +136,33 @@ export class SimulationEngine {
   }
 
   /**
+   * Update a node's name in real-time.
+   */
+  async updateNodeName(nodeId: string, name: string): Promise<void> {
+    const node = this.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    // Update in memory
+    node.name = name;
+    
+    // Update matching engine node info
+    this.matchingEngine.setNodeInfo(node.id, node.name, node.emoji);
+
+    console.log(`🏷️  Node renamed to ${name}`);
+
+    // Update in database (non-blocking)
+    prisma.gridNode.update({
+      where: { id: nodeId },
+      data: { name },
+    }).catch(err => console.error('Failed to save node name to DB:', err));
+
+    // Broadcast update to all clients
+    if (this.io) {
+      this.io.emit('node:nameUpdated', { nodeId, name });
+    }
+  }
+
+  /**
    * Update a node's configuration in real-time (from interactive sliders).
    */
   updateNodeConfig(update: NodeConfigUpdate): void {

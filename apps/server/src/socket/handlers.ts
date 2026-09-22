@@ -95,6 +95,20 @@ export function setupSocketHandlers(io: SocketServer, simEngine: SimulationEngin
       }
     });
 
+    // Handle node name updates
+    socket.on('node:updateName', async (update: { nodeId: string; name: string }) => {
+      if (!controlLimiter.isAllowed(socket.id)) {
+        socket.emit('error', { message: 'Too many requests, please slow down' });
+        return;
+      }
+      try {
+        await simEngine.updateNodeName(update.nodeId, update.name);
+      } catch (error) {
+        console.error('Node name update error:', error);
+        socket.emit('error', { message: 'Failed to update node name' });
+      }
+    });
+
     // Handle adding new nodes
     socket.on('node:add', async (request: AddNodeRequest) => {
       if (!controlLimiter.isAllowed(socket.id)) {
