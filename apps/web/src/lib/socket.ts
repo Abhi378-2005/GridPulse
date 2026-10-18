@@ -1,7 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import type { ServerToClientEvents, ClientToServerEvents } from '@gridpulse/shared';
-
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
+import { SERVER_URL } from './api';
 
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -18,4 +17,13 @@ export function getSocket(): TypedSocket {
     }) as TypedSocket;
   }
   return socket;
+}
+
+/** Reconnect the socket with a new login token (or none, after logout). */
+export function setSocketToken(token: string | null): void {
+  const s = getSocket();
+  const current = (s.auth as { token?: string | null } | undefined)?.token ?? null;
+  if (current === token) return;
+  s.auth = { token };
+  s.disconnect().connect();
 }

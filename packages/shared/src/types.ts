@@ -112,6 +112,10 @@ export interface AggregateMetrics {
   nodesOnline: number;
   currentGridPrice: number;
   avgP2PPrice: number;
+  gridImportKwh: number;      // Energy bought from MSEDCL (unmatched deficit)
+  gridExportKwh: number;      // Energy sold to MSEDCL (unmatched surplus)
+  gridImportCost: number;     // ₹ paid to the grid
+  gridExportRevenue: number;  // ₹ earned from the grid
 }
 
 // ─── Simulation Control ────────────────────────────────────

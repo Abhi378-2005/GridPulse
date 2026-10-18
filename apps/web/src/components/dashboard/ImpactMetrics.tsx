@@ -22,7 +22,7 @@ export function ImpactMetrics({ metrics }: ImpactMetricsProps) {
     {
       label: 'Money Saved',
       value: metrics?.totalMoneySaved || 0,
-      unit: '$',
+      unit: '₹',
       icon: '💰',
       color: 'text-blue-500',
       decimals: 2,
@@ -67,7 +67,7 @@ export function ImpactMetrics({ metrics }: ImpactMetricsProps) {
                     {item.label}
                   </div>
                   <div className={`text-xl font-mono font-bold ${item.color}`}>
-                    {item.unit === '$' && '$'}
+                    {item.unit === '₹' && '₹'}
                     <CountUp
                       end={item.value}
                       decimals={item.decimals}
@@ -75,7 +75,7 @@ export function ImpactMetrics({ metrics }: ImpactMetricsProps) {
                       preserveValue
                       separator=","
                     />
-                    {item.unit !== '$' && <span className="text-xs ml-1 opacity-70 text-foreground">{item.unit}</span>}
+                    {item.unit !== '₹' && <span className="text-xs ml-1 opacity-70 text-foreground">{item.unit}</span>}
                   </div>
                 </div>
               </CardContent>
@@ -102,9 +102,21 @@ export function ImpactMetrics({ metrics }: ImpactMetricsProps) {
             <CardContent className="p-3 text-center">
               <div className="text-xs text-muted-foreground mb-1">Avg P2P Price</div>
               <div className="font-mono text-lg font-bold text-blue-500">
-                ${(metrics?.avgP2PPrice || 0).toFixed(3)}
+                ₹{(metrics?.avgP2PPrice || 0).toFixed(2)}
               </div>
-              <div className="text-[10px] text-muted-foreground">vs Grid: ${(metrics?.currentGridPrice || 0.15).toFixed(3)}</div>
+              <div className="text-[10px] text-muted-foreground">vs Grid: ₹{(metrics?.currentGridPrice || 7.50).toFixed(2)}</div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-muted/20 shadow-none border-dashed">
+            <CardContent className="p-3 text-center space-y-1">
+              <div className="text-xs text-muted-foreground">Main Grid (MSEDCL)</div>
+              <div className="text-[11px] font-mono">
+                ⬇ {(metrics?.gridImportKwh || 0).toFixed(1)} kWh · ₹{(metrics?.gridImportCost || 0).toFixed(0)}
+              </div>
+              <div className="text-[11px] font-mono">
+                ⬆ {(metrics?.gridExportKwh || 0).toFixed(1)} kWh · ₹{(metrics?.gridExportRevenue || 0).toFixed(0)}
+              </div>
             </CardContent>
           </Card>
         </div>

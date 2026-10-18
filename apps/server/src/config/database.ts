@@ -1,14 +1,50 @@
-import { PrismaClient } from '@prisma/client';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 
-// Singleton Prisma client to avoid connection pool exhaustion
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+dotenv.config({ path: '../../.env' });
+dotenv.config(); // Also check local .env
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-});
+const MONGO_URL = process.env.MONGO_URL || 'mongodb://localhost:27017/gridpulse?replicaSet=rs0';
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+/**
+ * Connect to MongoDB. Reuses existing connection if already connected.
+ * MongoDB must be running as a replica set for transaction support (LedgerService).
+ */
+export async function connectDB(): Promise<typeof mongoose> {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose;
+  }
+
+  try {
+    await mongoose.connect(MONGO_URL, {
+      // Connection pool settings
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      serverSelectionTimeoutMS: 5000,
+      heartbeatFrequencyMS: 10000,
+    });
+
+    console.log('🗄️  Connected to MongoDB');
+
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+    });
+
+    mongoose.connection.on('disconnected', () => {
+      console.warn('⚠️  MongoDB disconnected');
+    });
+
+    return mongoose;
+  } catch (error) {
+    console.error('❌ Failed to connect to MongoDB:', error);
+    throw error;
+  }
+}
+
+/**
+ * Disconnect from MongoDB gracefully.
+ */
+export async function disconnectDB(): Promise<void> {
+  await mongoose.disconnect();
+  console.log('🗄️  Disconnected from MongoDB');
 }

@@ -61,11 +61,11 @@ export function LiveTicker({ trades }: LiveTickerProps) {
                     </span>
                     <span className="text-muted-foreground text-[10px]">@</span>
                     <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
-                      ${trade.clearingPrice.toFixed(4)}
+                      ₹{trade.clearingPrice.toFixed(4)}
                     </span>
                   </div>
                   <span className="font-mono text-[10px] text-muted-foreground font-medium">
-                    ${trade.totalCost.toFixed(4)}
+                    ₹{trade.totalCost.toFixed(4)}
                   </span>
                 </div>
               </motion.div>

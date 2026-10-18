@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
-import { prisma } from '../config/database';
+import mongoose from 'mongoose';
+import { Wallet, Trade, Transaction, Posting } from '../models';
 
 interface TradeSettlement {
   bidOrderId: string;
@@ -8,89 +9,121 @@ interface TradeSettlement {
   sellerNodeId: string;
   clearingPrice: Decimal;
   quantityKwh: Decimal;
-  totalCost: Decimal;
+  energyCost: Decimal;     // Paid to the seller
+  wheelingCharge: Decimal; // Paid to the grid operator for using its lines
+  totalCost: Decimal;      // energyCost + wheelingCharge, paid by the buyer
   co2AvoidedKg: Decimal;
+}
+
+export interface GridSettlement {
+  nodeId: string;
+  direction: 'IMPORT' | 'EXPORT';
+  kwh: number;
+  amount: number; // ₹ — import cost or export revenue
 }
 
 /**
  * Double-Entry Financial Ledger Service.
- * Ensures ACID compliance for all trade settlements.
+ * Ensures atomicity for all trade settlements using MongoDB transactions.
  * Every trade produces balanced debit/credit postings.
+ *
+ * NOTE: MongoDB transactions require a replica set (even single-node).
+ * docker-compose.yml starts Mongo with --replSet rs0 for this reason.
  */
 export class LedgerService {
   /**
-   * Settle a trade atomically using Prisma's interactive transaction.
-   * Creates Trade → Transaction → Debit (buyer) + Credit (seller).
-   * 
+   * Settle a trade atomically using MongoDB session.withTransaction().
+   * Creates Trade → Transaction → Debit (buyer) + Credit (seller) + Credit (grid, wheeling).
+   *
    * INVARIANT: For every transaction, SUM(debits) = SUM(credits).
    */
   async settleTrade(settlement: TradeSettlement): Promise<{ tradeId: string } | null> {
+    const session = await mongoose.startSession();
+
     try {
-      const result = await prisma.$transaction(async (tx) => {
+      let tradeId: string = '';
+
+      await session.withTransaction(async () => {
         // 1. Look up wallets
-        const buyerWallet = await tx.wallet.findUnique({
-          where: { nodeId: settlement.buyerNodeId },
-        });
-        const sellerWallet = await tx.wallet.findUnique({
-          where: { nodeId: settlement.sellerNodeId },
-        });
+        const buyerWallet = await Wallet.findOne({ nodeId: settlement.buyerNodeId }).session(session);
+        const sellerWallet = await Wallet.findOne({ nodeId: settlement.sellerNodeId }).session(session);
+        const gridWallet = await this.getGridWallet(session);
 
         if (!buyerWallet || !sellerWallet) {
           throw new Error('Wallet not found for buyer or seller');
         }
 
-        // 2. Check buyer has sufficient balance
-        const buyerBalance = await this.getWalletBalance(tx, buyerWallet.id);
+        // 2. Check buyer has sufficient balance (aggregate pipeline)
+        const buyerBalance = await this.getWalletBalance(buyerWallet._id.toString(), session);
         if (buyerBalance.lt(settlement.totalCost)) {
           throw new Error(`Insufficient funds: ${buyerBalance.toFixed(4)} < ${settlement.totalCost.toFixed(4)}`);
         }
 
         // 3. Create Trade record
-        const trade = await tx.trade.create({
-          data: {
-            bidOrderId: settlement.bidOrderId,
-            askOrderId: settlement.askOrderId,
-            buyerNodeId: settlement.buyerNodeId,
-            sellerNodeId: settlement.sellerNodeId,
-            clearingPrice: settlement.clearingPrice.toFixed(4),
-            quantityKwh: settlement.quantityKwh.toFixed(4),
-            totalCost: settlement.totalCost.toFixed(4),
-            co2AvoidedKg: settlement.co2AvoidedKg.toFixed(4),
-          },
-        });
+        const [trade] = await Trade.create(
+          [
+            {
+              bidOrderId: settlement.bidOrderId,
+              askOrderId: settlement.askOrderId,
+              buyerNodeId: settlement.buyerNodeId,
+              sellerNodeId: settlement.sellerNodeId,
+              clearingPrice: mongoose.Types.Decimal128.fromString(settlement.clearingPrice.toFixed(4)),
+              quantityKwh: mongoose.Types.Decimal128.fromString(settlement.quantityKwh.toFixed(4)),
+              totalCost: mongoose.Types.Decimal128.fromString(settlement.totalCost.toFixed(4)),
+              co2AvoidedKg: mongoose.Types.Decimal128.fromString(settlement.co2AvoidedKg.toFixed(4)),
+            },
+          ],
+          { session }
+        );
 
         // 4. Create Transaction record
-        const transaction = await tx.transaction.create({
-          data: {
-            tradeId: trade.id,
-            description: `Trade: ${settlement.quantityKwh.toFixed(2)} kWh @ $${settlement.clearingPrice.toFixed(4)}/kWh`,
-          },
-        });
+        const [transaction] = await Transaction.create(
+          [
+            {
+              tradeId: trade._id,
+              kind: 'TRADE',
+              description: `Trade: ${settlement.quantityKwh.toFixed(2)} kWh @ ₹${settlement.clearingPrice.toFixed(4)}/kWh`,
+            },
+          ],
+          { session }
+        );
 
         // 5. Create DEBIT posting (money leaves buyer)
-        await tx.posting.create({
-          data: {
-            amount: settlement.totalCost.toFixed(4),
-            type: 'DEBIT',
-            walletId: buyerWallet.id,
-            transactionId: transaction.id,
-          },
-        });
+        await Posting.create(
+          [
+            {
+              amount: mongoose.Types.Decimal128.fromString(settlement.totalCost.toFixed(4)),
+              type: 'DEBIT',
+              walletId: buyerWallet._id,
+              transactionId: transaction._id,
+            },
+          ],
+          { session }
+        );
 
-        // 6. Create CREDIT posting (money enters seller)
-        await tx.posting.create({
-          data: {
-            amount: settlement.totalCost.toFixed(4),
-            type: 'CREDIT',
-            walletId: sellerWallet.id,
-            transactionId: transaction.id,
-          },
-        });
+        // 6. CREDIT postings: energy cost to the seller, wheeling charge to the grid operator
+        await Posting.create(
+          [
+            {
+              amount: mongoose.Types.Decimal128.fromString(settlement.energyCost.toFixed(4)),
+              type: 'CREDIT',
+              walletId: sellerWallet._id,
+              transactionId: transaction._id,
+            },
+            {
+              amount: mongoose.Types.Decimal128.fromString(settlement.wheelingCharge.toFixed(4)),
+              type: 'CREDIT',
+              walletId: gridWallet._id,
+              transactionId: transaction._id,
+            },
+          ],
+          { session, ordered: true }
+        );
 
-        return { tradeId: trade.id };
+        tradeId = trade._id.toString();
       });
 
-      return result;
+      return tradeId ? { tradeId } : null;
     } catch (error: any) {
       if (error.message?.includes('Insufficient funds')) {
         // Expected — just means buyer can't afford it
@@ -98,29 +131,108 @@ export class LedgerService {
       }
       console.error('❌ Ledger settlement error:', error.message);
       return null;
+    } finally {
+      await session.endSession();
     }
   }
 
   /**
-   * Calculate wallet balance from the sum of all postings.
+   * Settle energy bought from / sold to the main grid (MSEDCL) for one or more houses.
+   * IMPORT: house is debited, grid credited. EXPORT: grid debited, house credited.
+   * No balance check on imports — like a real electricity bill, the house owes it regardless.
+   */
+  async settleGridTransfers(items: GridSettlement[]): Promise<void> {
+    const payable = items.filter(i => i.amount >= 0.0001);
+    if (payable.length === 0) return;
+
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const gridWallet = await this.getGridWallet(session);
+        const wallets = await Wallet.find({ nodeId: { $in: payable.map(i => i.nodeId) } }).session(session);
+        const walletByNode = new Map(wallets.map(w => [w.nodeId!.toString(), w]));
+
+        for (const item of payable) {
+          const wallet = walletByNode.get(item.nodeId);
+          if (!wallet) continue;
+
+          const isImport = item.direction === 'IMPORT';
+          const [tx] = await Transaction.create(
+            [
+              {
+                kind: isImport ? 'GRID_IMPORT' : 'GRID_EXPORT',
+                nodeId: item.nodeId,
+                kwh: item.kwh,
+                amount: item.amount,
+                description: `Grid ${isImport ? 'import' : 'export'}: ${item.kwh.toFixed(3)} kWh`,
+              },
+            ],
+            { session }
+          );
+
+          const amount = mongoose.Types.Decimal128.fromString(item.amount.toFixed(4));
+          await Posting.create(
+            [
+              { amount, type: 'DEBIT', walletId: isImport ? wallet._id : gridWallet._id, transactionId: tx._id },
+              { amount, type: 'CREDIT', walletId: isImport ? gridWallet._id : wallet._id, transactionId: tx._id },
+            ],
+            { session, ordered: true }
+          );
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ Grid settlement error:', error.message);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  /**
+   * Create the grid operator's wallet at startup so it's never created concurrently mid-trade.
+   */
+  static async ensureGridWallet(): Promise<void> {
+    await Wallet.updateOne({ systemAccount: 'GRID' }, { $setOnInsert: { systemAccount: 'GRID' } }, { upsert: true });
+  }
+
+  /**
+   * Find (or create on first use) the grid operator's system wallet.
+   */
+  private async getGridWallet(session: mongoose.ClientSession) {
+    const existing = await Wallet.findOne({ systemAccount: 'GRID' }).session(session);
+    if (existing) return existing;
+    const [created] = await Wallet.create([{ systemAccount: 'GRID' }], { session });
+    return created;
+  }
+
+  /**
+   * Calculate wallet balance using MongoDB aggregation.
    * Balance = SUM(credits) - SUM(debits)
    * This is the append-only double-entry pattern.
    */
-  private async getWalletBalance(tx: any, walletId: string): Promise<Decimal> {
-    const result = await tx.posting.groupBy({
-      by: ['type'],
-      where: { walletId },
-      _sum: { amount: true },
-    });
+  private async getWalletBalance(walletId: string, session?: mongoose.ClientSession): Promise<Decimal> {
+    const pipeline = [
+      { $match: { walletId: new mongoose.Types.ObjectId(walletId) } },
+      {
+        $group: {
+          _id: '$type',
+          total: { $sum: { $toDecimal: '$amount' } },
+        },
+      },
+    ];
+
+    const results = session
+      ? await Posting.aggregate(pipeline).session(session)
+      : await Posting.aggregate(pipeline);
 
     let credits = new Decimal(0);
     let debits = new Decimal(0);
 
-    for (const row of result) {
-      if (row.type === 'CREDIT') {
-        credits = new Decimal(row._sum.amount?.toString() || '0');
+    for (const row of results) {
+      const total = new Decimal(row.total.toString());
+      if (row._id === 'CREDIT') {
+        credits = total;
       } else {
-        debits = new Decimal(row._sum.amount?.toString() || '0');
+        debits = total;
       }
     }
 
@@ -136,23 +248,28 @@ export class WalletService {
    * Get current balance of a node's wallet.
    */
   static async getBalance(nodeId: string): Promise<number> {
-    const wallet = await prisma.wallet.findUnique({ where: { nodeId } });
+    const wallet = await Wallet.findOne({ nodeId });
     if (!wallet) return 0;
 
-    const result = await prisma.posting.groupBy({
-      by: ['type'],
-      where: { walletId: wallet.id },
-      _sum: { amount: true },
-    });
+    const results = await Posting.aggregate([
+      { $match: { walletId: wallet._id } },
+      {
+        $group: {
+          _id: '$type',
+          total: { $sum: { $toDecimal: '$amount' } },
+        },
+      },
+    ]);
 
     let credits = new Decimal(0);
     let debits = new Decimal(0);
 
-    for (const row of result) {
-      if (row.type === 'CREDIT') {
-        credits = new Decimal(row._sum.amount?.toString() || '0');
+    for (const row of results) {
+      const total = new Decimal(row.total.toString());
+      if (row._id === 'CREDIT') {
+        credits = total;
       } else {
-        debits = new Decimal(row._sum.amount?.toString() || '0');
+        debits = total;
       }
     }
 
@@ -160,31 +277,52 @@ export class WalletService {
   }
 
   /**
-   * Get all wallet balances efficiently with a single query.
+   * Get all wallet balances efficiently with aggregation.
    */
   static async getAllBalances(): Promise<Map<string, number>> {
     const balances = new Map<string, number>();
 
-    // Single query: aggregate all postings grouped by wallet's nodeId
-    const wallets = await prisma.wallet.findMany({
-      include: {
-        postings: {
-          select: { amount: true, type: true },
+    // Get all wallets with their postings aggregated
+    const wallets = await Wallet.find({ nodeId: { $type: 'objectId' } }).lean();
+
+    if (wallets.length === 0) return balances;
+
+    // Single aggregation across all wallets
+    const results = await Posting.aggregate([
+      {
+        $group: {
+          _id: { walletId: '$walletId', type: '$type' },
+          total: { $sum: { $toDecimal: '$amount' } },
         },
       },
-    });
+    ]);
 
-    for (const wallet of wallets) {
-      let credits = new Decimal(0);
-      let debits = new Decimal(0);
-      for (const posting of wallet.postings) {
-        if (posting.type === 'CREDIT') {
-          credits = credits.plus(posting.amount.toString());
-        } else {
-          debits = debits.plus(posting.amount.toString());
-        }
+    // Build a map of walletId → { credits, debits }
+    const walletTotals = new Map<string, { credits: Decimal; debits: Decimal }>();
+    for (const row of results) {
+      const wid = row._id.walletId.toString();
+      if (!walletTotals.has(wid)) {
+        walletTotals.set(wid, { credits: new Decimal(0), debits: new Decimal(0) });
       }
-      balances.set(wallet.nodeId, credits.minus(debits).toNumber());
+      const entry = walletTotals.get(wid)!;
+      const total = new Decimal(row.total.toString());
+      if (row._id.type === 'CREDIT') {
+        entry.credits = total;
+      } else {
+        entry.debits = total;
+      }
+    }
+
+    // Map wallet → nodeId → balance
+    for (const wallet of wallets) {
+      const wid = wallet._id.toString();
+      const nodeId = wallet.nodeId!.toString();
+      const entry = walletTotals.get(wid);
+      if (entry) {
+        balances.set(nodeId, entry.credits.minus(entry.debits).toNumber());
+      } else {
+        balances.set(nodeId, 0);
+      }
     }
 
     return balances;

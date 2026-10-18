@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { TRADING } from '@gridpulse/shared';
 
 interface BookOrder {
   id: string;
@@ -8,6 +9,7 @@ interface BookOrder {
   quantity: Decimal;
   filled: Decimal;
   timestamp: number;
+  source?: 'AUTO' | 'MANUAL'; // Who placed it — the AutoTrader only replaces its own orders
 }
 
 /**
@@ -18,7 +20,8 @@ interface BookOrder {
 export class OrderBook {
   private bids: BookOrder[] = [];
   private asks: BookOrder[] = [];
-  private lastClearingPrice: Decimal = new Decimal(0.12); // Default starting price
+  // Default starting price (₹/kWh): midpoint between grid export and normal import rates
+  private lastClearingPrice: Decimal = new Decimal((TRADING.GRID_EXPORT_RATE + TRADING.GRID_IMPORT_RATE_NORMAL) / 2);
 
   /**
    * Add a bid (buy order) to the book.
@@ -59,6 +62,30 @@ export class OrderBook {
   }
 
   /**
+   * Bids with quantity remaining, best first (a copy — safe to iterate while matching).
+   */
+  getOpenBids(): BookOrder[] {
+    return this.bids.filter(b => b.quantity.minus(b.filled).gt(0));
+  }
+
+  /**
+   * Asks with quantity remaining, best first (a copy — safe to iterate while matching).
+   */
+  getOpenAsks(): BookOrder[] {
+    return this.asks.filter(a => a.quantity.minus(a.filled).gt(0));
+  }
+
+  /**
+   * Remove a single order from the book. Returns true if it was found.
+   */
+  removeOrder(orderId: string): boolean {
+    const before = this.bids.length + this.asks.length;
+    this.bids = this.bids.filter(b => b.id !== orderId);
+    this.asks = this.asks.filter(a => a.id !== orderId);
+    return this.bids.length + this.asks.length < before;
+  }
+
+  /**
    * Get the bid-ask spread.
    */
   getSpread(): number {
@@ -77,11 +104,15 @@ export class OrderBook {
   }
 
   /**
-   * Cancel all open orders for a specific node.
+   * Cancel open orders for a specific node (only AutoTrader orders when autoOnly is true).
+   * Returns the IDs of cancelled orders so they can be marked in the database.
    */
-  cancelNodeOrders(nodeId: string): void {
-    this.bids = this.bids.filter(b => b.nodeId !== nodeId);
-    this.asks = this.asks.filter(a => a.nodeId !== nodeId);
+  cancelNodeOrders(nodeId: string, autoOnly: boolean = false): string[] {
+    const matches = (o: BookOrder) => o.nodeId === nodeId && (!autoOnly || o.source !== 'MANUAL');
+    const cancelledIds = [...this.bids, ...this.asks].filter(matches).map(o => o.id);
+    this.bids = this.bids.filter(b => !matches(b));
+    this.asks = this.asks.filter(a => !matches(a));
+    return cancelledIds;
   }
 
   /**

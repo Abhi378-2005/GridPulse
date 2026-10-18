@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { prisma } from '../config/database';
+import { GridNode, Trade, MeterReading } from '../models';
 import { WalletService } from '../ledger/LedgerService';
 
 /** Parse and clamp a numeric query param within safe bounds. */
@@ -15,9 +15,7 @@ export function createAnalyticsRouter(): Router {
   // GET /api/analytics/nodes
   router.get('/nodes', async (req, res) => {
     try {
-      const nodes = await prisma.gridNode.findMany({
-        include: { wallet: true },
-      });
+      const nodes = await GridNode.find({}).lean();
       res.json(nodes);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch nodes' });
@@ -31,19 +29,26 @@ export function createAnalyticsRouter(): Router {
       const offset = parseIntParam(req.query.offset, 0, 0, 100000);
 
       const [trades, total] = await Promise.all([
-        prisma.trade.findMany({
-          orderBy: { createdAt: 'desc' },
-          take: limit,
-          skip: offset,
-          include: {
-            buyerNode: true,
-            sellerNode: true,
-          },
-        }),
-        prisma.trade.count(),
+        Trade.find({})
+          .sort({ createdAt: -1 })
+          .skip(offset)
+          .limit(limit)
+          .populate('buyerNodeId', 'name emoji')
+          .populate('sellerNodeId', 'name emoji')
+          .lean(),
+        Trade.countDocuments(),
       ]);
 
-      res.json({ trades, total, limit, offset });
+      // Transform Decimal128 fields for JSON serialization
+      const serialized = trades.map(t => ({
+        ...t,
+        clearingPrice: parseFloat(t.clearingPrice.toString()),
+        quantityKwh: parseFloat(t.quantityKwh.toString()),
+        totalCost: parseFloat(t.totalCost.toString()),
+        co2AvoidedKg: parseFloat(t.co2AvoidedKg.toString()),
+      }));
+
+      res.json({ trades: serialized, total, limit, offset });
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch trades' });
     }
@@ -72,12 +77,12 @@ export function createAnalyticsRouter(): Router {
       const limit = parseIntParam(req.query.limit, 100, 1, 1000);
       const offset = parseIntParam(req.query.offset, 0, 0, 100000);
 
-      const readings = await prisma.meterReading.findMany({
-        where: { nodeId },
-        orderBy: { simulationTime: 'desc' },
-        take: limit,
-        skip: offset,
-      });
+      const readings = await MeterReading.find({ nodeId })
+        .sort({ simulationTime: -1 })
+        .skip(offset)
+        .limit(limit)
+        .lean();
+
       res.json(readings);
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch readings' });
@@ -86,4 +91,3 @@ export function createAnalyticsRouter(): Router {
 
   return router;
 }
-

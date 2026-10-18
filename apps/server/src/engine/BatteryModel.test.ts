@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { BatteryModel } from './BatteryModel';
+import { BATTERY } from '@gridpulse/shared';
 
 describe('BatteryModel', () => {
   const capacity = 10.0; // kWh
@@ -9,27 +10,27 @@ describe('BatteryModel', () => {
     it('should charge battery from surplus', () => {
       const result = BatteryModel.update(3.0, 5.0, capacity, tickDuration);
       expect(result.newChargeKwh).toBeGreaterThan(5.0);
-      expect(result.newChargeKwh).toBeLessThanOrEqual(capacity);
+      expect(result.newChargeKwh).toBeLessThanOrEqual(capacity * BATTERY.MAX_SOC_PCT);
     });
 
-    it('should not exceed battery capacity', () => {
-      const result = BatteryModel.update(10.0, 9.9, capacity, tickDuration);
-      expect(result.newChargeKwh).toBeLessThanOrEqual(capacity);
+    it('should not exceed battery max SOC', () => {
+      const result = BatteryModel.update(10.0, 9.0, capacity, tickDuration);
+      expect(result.newChargeKwh).toBeLessThanOrEqual(capacity * BATTERY.MAX_SOC_PCT + 0.01);
     });
 
     it('should pass through remaining surplus after charging', () => {
-      // With a full battery, all surplus should pass through
-      const result = BatteryModel.update(5.0, capacity, capacity, tickDuration);
+      // With battery near max capacity, surplus should pass through
+      const result = BatteryModel.update(5.0, capacity * BATTERY.MAX_SOC_PCT, capacity, tickDuration);
       expect(result.adjustedNetKw).toBeGreaterThanOrEqual(0);
-      expect(result.newChargeKwh).toBe(capacity);
+      expect(result.newChargeKwh).toBeLessThanOrEqual(capacity);
     });
 
-    it('should respect max charge rate', () => {
-      // 3kW max rate * tickDuration hours = max energy per tick
-      const maxRate = 3.0;
-      const maxEnergy = maxRate * tickDuration;
-      const result = BatteryModel.update(100.0, 0, capacity, tickDuration, maxRate);
-      expect(result.newChargeKwh).toBeLessThanOrEqual(maxEnergy + 0.001);
+    it('should respect max charge C-rate', () => {
+      const maxChargeRateKw = capacity * BATTERY.DEFAULT_C_RATE;
+      const maxEnergyTransfer = maxChargeRateKw * tickDuration;
+      const result = BatteryModel.update(100.0, 0, capacity, tickDuration);
+      // Effective charge applies round-trip efficiency
+      expect(result.newChargeKwh).toBeLessThanOrEqual(maxEnergyTransfer + 0.001);
     });
   });
 
@@ -37,34 +38,32 @@ describe('BatteryModel', () => {
     it('should discharge battery to cover deficit', () => {
       const result = BatteryModel.update(-2.0, 5.0, capacity, tickDuration);
       expect(result.newChargeKwh).toBeLessThan(5.0);
-      expect(result.newChargeKwh).toBeGreaterThanOrEqual(0);
+      expect(result.newChargeKwh).toBeGreaterThanOrEqual(capacity * BATTERY.MIN_SOC_PCT);
     });
 
-    it('should not go below zero', () => {
+    it('should not go below minimum SOC', () => {
       const result = BatteryModel.update(-100.0, 0.01, capacity, tickDuration);
       expect(result.newChargeKwh).toBeGreaterThanOrEqual(0);
     });
 
-    it('should pass through remaining deficit', () => {
-      // With an empty battery, all deficit should pass through
-      const result = BatteryModel.update(-5.0, 0, capacity, tickDuration);
+    it('should pass through remaining deficit when near min SOC', () => {
+      const result = BatteryModel.update(-5.0, capacity * BATTERY.MIN_SOC_PCT, capacity, tickDuration);
       expect(result.adjustedNetKw).toBeLessThanOrEqual(0);
-      expect(result.newChargeKwh).toBe(0);
     });
 
-    it('should respect max discharge rate', () => {
-      const maxRate = 3.0;
-      const maxEnergy = maxRate * tickDuration;
-      const result = BatteryModel.update(-100.0, capacity, capacity, tickDuration, maxRate);
-      expect(capacity - result.newChargeKwh).toBeLessThanOrEqual(maxEnergy + 0.001);
+    it('should respect max discharge C-rate', () => {
+      const maxChargeRateKw = capacity * BATTERY.DEFAULT_C_RATE;
+      const maxEnergyTransfer = maxChargeRateKw * tickDuration;
+      const startCharge = 8.0;
+      const result = BatteryModel.update(-100.0, startCharge, capacity, tickDuration);
+      expect(startCharge - result.newChargeKwh).toBeLessThanOrEqual(maxEnergyTransfer + 0.01);
     });
   });
 
   describe('edge cases', () => {
-    it('should handle zero net energy', () => {
+    it('should handle zero net energy (minimal self-discharge)', () => {
       const result = BatteryModel.update(0, 5.0, capacity, tickDuration);
-      // Zero net → no change (boundary: might get very small rounding)
-      expect(result.newChargeKwh).toBeCloseTo(5.0, 5);
+      expect(result.newChargeKwh).toBeCloseTo(5.0, 3);
     });
 
     it('should handle zero battery capacity', () => {

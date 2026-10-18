@@ -1,23 +1,34 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: gridpulse-db
-    environment:
-      POSTGRES_USER: gridpulse
-      POSTGRES_PASSWORD: gridpulse_dev
-      POSTGRES_DB: gridpulse
+  mongo:
+    image: mongo:7
+    container_name: gridpulse-mongo
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mongodata:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gridpulse"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  # One-shot init container that bootstraps the replica set
+  mongo-init:
+    image: mongo:7
+    container_name: gridpulse-mongo-init
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      mongosh --host mongo:27017 --eval '
+        try { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }); }
+        catch(e) { if (e.codeName === "AlreadyInitialized") print("Replica set already initialized"); else throw e; }
+      '
+
 volumes:
-  pgdata:
+  mongodata:
     driver: local

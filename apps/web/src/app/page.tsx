@@ -3,6 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { useSocket } from '@/hooks/useSocket';
+import { useAuth } from '@/hooks/useAuth';
+import { AuthModal } from '@/components/auth/AuthModal';
+import { MyHouseModal } from '@/components/dashboard/MyHouseModal';
 import { Header } from '@/components/layout/Header';
 import { GridTopology } from '@/components/dashboard/GridTopology';
 import { ImpactMetrics } from '@/components/dashboard/ImpactMetrics';
@@ -26,6 +29,7 @@ export default function Dashboard() {
     metrics,
     liveWeather,
     weatherEvents,
+    serverError,
     sendControl,
     sendNodeConfig,
     sendNodeNameUpdate,
@@ -34,6 +38,19 @@ export default function Dashboard() {
   } = useSocket();
 
   const { toasts, addToast, removeToast } = useToast();
+  const { token, user, isAdmin, login, register, logout } = useAuth();
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isMyHouseOpen, setIsMyHouseOpen] = useState(false);
+
+  const notify = useCallback((message: string, type: 'success' | 'error' | 'info') => {
+    addToast({ message, type, duration: 4000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Show server-side rejections (e.g. "Admin login required")
+  useEffect(() => {
+    if (serverError) notify(serverError.message, 'error');
+  }, [serverError, notify]);
   const [selectedNode, setSelectedNode] = useState<GridNodeState | null>(null);
   const [isAddNodeOpen, setIsAddNodeOpen] = useState(false);
 
@@ -109,6 +126,24 @@ export default function Dashboard() {
         }}
       />
 
+      <AuthModal
+        isOpen={isAuthOpen}
+        nodes={nodes}
+        onClose={() => setIsAuthOpen(false)}
+        onLogin={login}
+        onRegister={register}
+      />
+
+      {token && user?.nodeId && (
+        <MyHouseModal
+          isOpen={isMyHouseOpen}
+          nodeId={user.nodeId}
+          token={token}
+          onClose={() => setIsMyHouseOpen(false)}
+          onNotify={notify}
+        />
+      )}
+
       {/* Accessibility: announce connection status */}
       <div className="sr-only" aria-live="polite" role="status">
         {isConnected ? 'Connected to GridPulse server' : 'Disconnected from GridPulse server'}
@@ -123,6 +158,12 @@ export default function Dashboard() {
         onPauseResume={handlePauseResume}
         onModeChange={handleModeChange}
         onTriggerHeatwave={handleTriggerHeatwave}
+        canControl={isAdmin}
+        userName={user?.name ?? null}
+        hasHouse={!!user?.nodeId}
+        onLoginClick={() => setIsAuthOpen(true)}
+        onLogout={logout}
+        onMyHouseClick={() => setIsMyHouseOpen(true)}
       />
 
       {/* Main Content */}
@@ -133,15 +174,15 @@ export default function Dashboard() {
             <ImpactMetrics metrics={metrics} />
           </ErrorBoundary>
           
-          {/* Add Node Button */}
-          <button
+          {/* Add Node Button (admin only) */}
+          {isAdmin && <button
             onClick={() => setIsAddNodeOpen(true)}
             className="w-full mt-3 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 text-muted-foreground hover:text-primary"
             aria-label="Add a new node to the grid"
           >
             <Plus className="h-4 w-4" />
             <span className="text-xs font-medium">Add Node</span>
-          </button>
+          </button>}
         </aside>
 
         {/* Center — Grid Topology + Bottom Panels */}

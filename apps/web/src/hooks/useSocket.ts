@@ -25,6 +25,7 @@ export function useSocket() {
   const [metrics, setMetrics] = useState<AggregateMetrics | null>(null);
   const [liveWeather, setLiveWeather] = useState<LiveWeatherData | null>(null);
   const [weatherEvents, setWeatherEvents] = useState<WeatherEventData[]>([]);
+  const [serverError, setServerError] = useState<{ message: string; at: number } | null>(null);
   const socketRef = useRef(getSocket());
 
   useEffect(() => {
@@ -80,6 +81,11 @@ export function useSocket() {
       setNodes(prev => prev.map(n => n.id === update.nodeId ? { ...n, name: update.name } : n));
     });
 
+    function onServerError(err: { message: string }) {
+      setServerError({ message: err.message, at: Date.now() });
+    }
+    socket.on('error', onServerError);
+
     if (socket.connected) setIsConnected(true);
 
     return () => {
@@ -92,6 +98,7 @@ export function useSocket() {
       socket.off('weather:event', onWeatherEvent);
       socket.off('weather:live', onWeatherLive);
       socket.off('node:nameUpdated');
+      socket.off('error', onServerError);
     };
   }, []);
 
@@ -124,6 +131,7 @@ export function useSocket() {
     metrics,
     liveWeather,
     weatherEvents,
+    serverError,
     sendControl,
     sendNodeConfig,
     sendNodeNameUpdate,

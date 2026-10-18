@@ -126,7 +126,7 @@ export function GridTopology({ nodes, recentTrades, onNodeClick, selectedNodeId 
     const flowNodes: Node[] = nodes.map((node, idx) => ({
       id: node.id,
       position: positions[idx] || { x: 100 + idx * 150, y: 200 },
-      data: node,
+      data: node as unknown as Record<string, unknown>,
       type: 'houseNode',
       draggable: true,
     }));
@@ -187,8 +187,8 @@ export function GridTopology({ nodes, recentTrades, onNodeClick, selectedNodeId 
   }, [nodes, recentTrades, theme]);
 
   const nodeTypes = useMemo(() => ({
-    houseNode: ({ data }: { data: GridNodeState }) => (
-      <HouseNodeContent data={data} isSelected={selectedNodeId === data.id} />
+    houseNode: ({ data }: { data: any }) => (
+      <HouseNodeContent data={data as GridNodeState} isSelected={selectedNodeId === data.id} />
     ),
   }), [selectedNodeId]);
 

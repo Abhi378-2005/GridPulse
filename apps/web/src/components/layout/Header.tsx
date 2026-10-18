@@ -13,6 +13,12 @@ interface HeaderProps {
   onPauseResume: () => void;
   onModeChange: (mode: DataMode) => void;
   onTriggerHeatwave: () => void;
+  canControl: boolean;          // Admins only — the server rejects controls from others
+  userName: string | null;
+  hasHouse: boolean;
+  onLoginClick: () => void;
+  onLogout: () => void;
+  onMyHouseClick: () => void;
 }
 
 export function Header({
@@ -23,6 +29,12 @@ export function Header({
   onPauseResume,
   onModeChange,
   onTriggerHeatwave,
+  canControl,
+  userName,
+  hasHouse,
+  onLoginClick,
+  onLogout,
+  onMyHouseClick,
 }: HeaderProps) {
   const virtualTime = simState?.virtualTime
     ? new Date(simState.virtualTime).toLocaleTimeString('en-US', {
@@ -82,6 +94,7 @@ export function Header({
               <button
                 key={mode}
                 onClick={() => onModeChange(mode)}
+                disabled={!canControl}
                 aria-pressed={isActive}
                 aria-label={`Switch to ${mode} mode`}
                 className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
@@ -102,6 +115,7 @@ export function Header({
             variant="outline"
             size="sm"
             onClick={onPauseResume}
+            disabled={!canControl}
             className="w-24"
             aria-label={simState?.isRunning ? 'Pause simulation' : 'Resume simulation'}
           >
@@ -111,6 +125,7 @@ export function Header({
             variant="destructive"
             size="sm"
             onClick={onTriggerHeatwave}
+            disabled={!canControl}
             aria-label="Trigger a heatwave weather event"
           >
             ⚡ Heatwave
@@ -132,6 +147,7 @@ export function Header({
               <button
                 key={speed}
                 onClick={() => onSpeedChange(speed)}
+                disabled={!canControl}
                 aria-label={`Set speed to ${speed}x`}
                 aria-pressed={simState?.speed === speed}
                 className={`px-1.5 py-0.5 text-[10px] font-mono rounded transition-colors ${
@@ -147,6 +163,17 @@ export function Header({
         </div>
 
         <div className="flex items-center gap-2 border-l pl-4">
+          {userName ? (
+            <>
+              {hasHouse && (
+                <Button variant="outline" size="sm" onClick={onMyHouseClick}>🏠 My House</Button>
+              )}
+              <span className="hidden md:inline text-xs text-muted-foreground">{userName}</span>
+              <Button variant="ghost" size="sm" onClick={onLogout}>Log out</Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={onLoginClick}>Log in</Button>
+          )}
           <ThemeToggle />
           
           <div className="flex items-center gap-2">

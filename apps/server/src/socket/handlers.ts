@@ -1,6 +1,7 @@
 import { Server as SocketServer, Socket } from 'socket.io';
 import { SimulationEngine } from '../engine/SimulationEngine';
 import type { SimControlAction, NodeConfigUpdate, AddNodeRequest } from '@gridpulse/shared';
+import { verifyToken, canAccessNode, type AuthUser } from '../middleware/auth';
 
 /** Simple per-client rate limiter for socket events. */
 class RateLimiter {
@@ -37,8 +38,26 @@ export function setupSocketHandlers(io: SocketServer, simEngine: SimulationEngin
   const controlLimiter = new RateLimiter(10, 5000); // 10 actions per 5s
   const configLimiter = new RateLimiter(20, 5000);  // 20 slider updates per 5s (sliders fire frequently)
 
+  // Anyone may watch the dashboard. A JWT (sent as `auth.token`) identifies the user for controls.
+  io.use((socket, next) => {
+    socket.data.user = verifyToken(socket.handshake.auth?.token) as AuthUser | null;
+    next();
+  });
+
   io.on('connection', (socket: Socket) => {
     console.log(`🔌 Client connected: ${socket.id}`);
+    const user: AuthUser | null = socket.data.user;
+
+    const requireAdminSocket = (): boolean => {
+      if (user?.role === 'admin') return true;
+      socket.emit('error', { message: 'Admin login required for this action' });
+      return false;
+    };
+    const requireNodeSocket = (nodeId: string): boolean => {
+      if (canAccessNode(user ?? undefined, nodeId)) return true;
+      socket.emit('error', { message: 'Log in as this house’s owner (or an admin) to change it' });
+      return false;
+    };
 
     // Send current state immediately on connect
     socket.emit('simulation:tick', {
@@ -49,6 +68,7 @@ export function setupSocketHandlers(io: SocketServer, simEngine: SimulationEngin
 
     // Handle simulation control commands (rate-limited)
     socket.on('simulation:control', (action: SimControlAction) => {
+      if (!requireAdminSocket()) return;
       if (!controlLimiter.isAllowed(socket.id)) {
         console.warn(`⚠️  Rate limited: ${socket.id}`);
         socket.emit('error', { message: 'Too many control actions, please slow down' });
@@ -84,6 +104,7 @@ export function setupSocketHandlers(io: SocketServer, simEngine: SimulationEngin
 
     // Handle node config updates (interactive sliders)
     socket.on('node:updateConfig', (update: NodeConfigUpdate) => {
+      if (!requireNodeSocket(update.nodeId)) return;
       if (!configLimiter.isAllowed(socket.id)) {
         return; // Silently drop slider updates that are too fast
       }
@@ -97,6 +118,7 @@ export function setupSocketHandlers(io: SocketServer, simEngine: SimulationEngin
 
     // Handle node name updates
     socket.on('node:updateName', async (update: { nodeId: string; name: string }) => {
+      if (!requireNodeSocket(update.nodeId)) return;
       if (!controlLimiter.isAllowed(socket.id)) {
         socket.emit('error', { message: 'Too many requests, please slow down' });
         return;
@@ -111,6 +133,7 @@ export function setupSocketHandlers(io: SocketServer, simEngine: SimulationEngin
 
     // Handle adding new nodes
     socket.on('node:add', async (request: AddNodeRequest) => {
+      if (!requireAdminSocket()) return;
       if (!controlLimiter.isAllowed(socket.id)) {
         socket.emit('error', { message: 'Too many requests, please slow down' });
         return;
@@ -128,6 +151,7 @@ export function setupSocketHandlers(io: SocketServer, simEngine: SimulationEngin
 
     // Handle location changes for LIVE mode
     socket.on('location:set', (location: { latitude: number; longitude: number; label: string }) => {
+      if (!requireAdminSocket()) return;
       if (!controlLimiter.isAllowed(socket.id)) return;
       try {
         simEngine.setLocation(location.latitude, location.longitude, location.label);

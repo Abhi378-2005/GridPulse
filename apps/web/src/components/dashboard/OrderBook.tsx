@@ -20,14 +20,14 @@ export function OrderBook({ orderBook }: OrderBookProps) {
         <CardTitle className="text-sm font-semibold">Order Book</CardTitle>
         {orderBook?.spread !== undefined && (
           <span className="text-xs font-mono text-muted-foreground">
-            Spread: ${orderBook.spread.toFixed(4)}
+            Spread: ₹{orderBook.spread.toFixed(4)}
           </span>
         )}
       </CardHeader>
       
       <CardContent className="flex-1 p-3 flex flex-col min-h-0 overflow-y-auto">
         <div className="flex justify-between text-[10px] text-muted-foreground uppercase tracking-wider mb-2 px-1">
-          <span>Price ($/kWh)</span>
+          <span>Price (₹/kWh)</span>
           <span>Quantity (kWh)</span>
         </div>
 
@@ -40,7 +40,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
                 style={{ width: `${(ask.quantity / maxQty) * 100}%` }}
               />
               <span className="font-mono text-xs text-red-600 dark:text-red-400 relative z-10">
-                ${ask.price.toFixed(4)}
+                ₹{ask.price.toFixed(4)}
               </span>
               <span className="font-mono text-xs text-muted-foreground relative z-10">
                 {ask.quantity.toFixed(2)}
@@ -52,7 +52,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
         {/* Spread indicator */}
         <div className="flex items-center justify-center py-1.5 my-1 border-y bg-muted/20">
           <span className="font-mono text-xs text-primary font-bold">
-            ${(orderBook?.lastPrice || 0).toFixed(4)}
+            ₹{(orderBook?.lastPrice || 0).toFixed(4)}
           </span>
           <span className="text-[10px] text-muted-foreground ml-2 uppercase">Last Price</span>
         </div>
@@ -66,7 +66,7 @@ export function OrderBook({ orderBook }: OrderBookProps) {
                 style={{ width: `${(bid.quantity / maxQty) * 100}%` }}
               />
               <span className="font-mono text-xs text-emerald-600 dark:text-emerald-500 relative z-10">
-                ${bid.price.toFixed(4)}
+                ₹{bid.price.toFixed(4)}
               </span>
               <span className="font-mono text-xs text-muted-foreground relative z-10">
                 {bid.quantity.toFixed(2)}

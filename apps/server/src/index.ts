@@ -3,26 +3,33 @@ import cors from 'cors';
 import { createServer } from 'http';
 import { Server as SocketServer } from 'socket.io';
 import dotenv from 'dotenv';
+import { connectDB, disconnectDB } from './config/database';
 import { SimulationEngine } from './engine/SimulationEngine';
 import { setupSocketHandlers } from './socket/handlers';
 import { createSimulationRouter } from './routes/simulation';
 import { createAnalyticsRouter } from './routes/analytics';
-import { prisma } from './config/database';
+import { createAuthRouter } from './routes/auth';
+import { createTradingRouter } from './routes/trading';
+import { createReportsRouter } from './routes/reports';
 
 dotenv.config({ path: '../../.env' });
 dotenv.config(); // Also check local .env
 
-const PORT = process.env.SERVER_PORT || 3001;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
+const rawCors = process.env.CORS_ORIGIN || '*';
+const corsOrigin = rawCors === '*' ? '*' : rawCors.includes(',') ? rawCors.split(',').map((s) => s.trim()) : rawCors;
 
 async function main() {
   console.log('\n⚡ ═══════════════════════════════════════');
   console.log('   GridPulse Server Starting...');
   console.log('   ═══════════════════════════════════════\n');
 
+  // Connect to MongoDB
+  await connectDB();
+
   // Express app
   const app = express();
-  app.use(cors({ origin: CORS_ORIGIN }));
+  app.use(cors({ origin: corsOrigin, credentials: true }));
   app.use(express.json());
 
   // HTTP server
@@ -30,7 +37,7 @@ async function main() {
 
   // Socket.io
   const io = new SocketServer(httpServer, {
-    cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] },
+    cors: { origin: corsOrigin, methods: ['GET', 'POST'], credentials: true },
   });
 
   // Initialize simulation engine
@@ -40,6 +47,9 @@ async function main() {
   // REST routes
   app.use('/api/simulation', createSimulationRouter(simEngine));
   app.use('/api/analytics', createAnalyticsRouter());
+  app.use('/api/auth', createAuthRouter());
+  app.use('/api/trading', createTradingRouter(simEngine));
+  app.use('/api/reports', createReportsRouter());
 
   // Health check
   app.get('/api/health', (req, res) => {
@@ -71,7 +81,7 @@ async function main() {
     simEngine.pause();
     io.close();
     httpServer.close();
-    await prisma.$disconnect();
+    await disconnectDB();
     console.log('👋 Goodbye!');
     process.exit(0);
   };
@@ -84,4 +94,3 @@ main().catch((err) => {
   console.error('❌ Server startup failed:', err);
   process.exit(1);
 });
-

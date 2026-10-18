@@ -7,12 +7,10 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
-    "db:migrate": "cd apps/server && npx prisma migrate dev",
-    "db:seed": "cd apps/server && npx prisma db seed",
-    "db:studio": "cd apps/server && npx prisma studio",
+    "db:seed": "pnpm --filter @gridpulse/server seed",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "setup": "pnpm install && pnpm docker:up && sleep 3 && pnpm db:migrate && pnpm db:seed"
+    "setup": "pnpm install && pnpm docker:up && pnpm db:seed"
   },
   "devDependencies": {
     "turbo": "^2.1.0"

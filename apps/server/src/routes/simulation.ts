@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { SimulationEngine } from '../engine/SimulationEngine';
+import { authenticateToken, requireAdmin } from '../middleware/auth';
 
 export function createSimulationRouter(simEngine: SimulationEngine): Router {
   const router = Router();
@@ -10,19 +11,19 @@ export function createSimulationRouter(simEngine: SimulationEngine): Router {
   });
 
   // POST /api/simulation/start
-  router.post('/start', (req, res) => {
+  router.post('/start', authenticateToken, requireAdmin, (req, res) => {
     simEngine.start();
     res.json({ message: 'Simulation started', state: simEngine.getState() });
   });
 
   // POST /api/simulation/pause
-  router.post('/pause', (req, res) => {
+  router.post('/pause', authenticateToken, requireAdmin, (req, res) => {
     simEngine.pause();
     res.json({ message: 'Simulation paused', state: simEngine.getState() });
   });
 
   // POST /api/simulation/speed
-  router.post('/speed', (req, res) => {
+  router.post('/speed', authenticateToken, requireAdmin, (req, res) => {
     const { speed } = req.body;
     if (typeof speed !== 'number') {
       return res.status(400).json({ error: 'Speed must be a number' });
@@ -32,7 +33,7 @@ export function createSimulationRouter(simEngine: SimulationEngine): Router {
   });
 
   // POST /api/simulation/mode
-  router.post('/mode', (req, res) => {
+  router.post('/mode', authenticateToken, requireAdmin, (req, res) => {
     const { mode } = req.body;
     if (!['LIVE', 'REPLAY', 'DEMO'].includes(mode)) {
       return res.status(400).json({ error: 'Mode must be LIVE, REPLAY, or DEMO' });
@@ -42,7 +43,7 @@ export function createSimulationRouter(simEngine: SimulationEngine): Router {
   });
 
   // POST /api/simulation/trigger-event
-  router.post('/trigger-event', (req, res) => {
+  router.post('/trigger-event', authenticateToken, requireAdmin, (req, res) => {
     const { eventType } = req.body;
     simEngine.triggerEvent(eventType || 'HEATWAVE');
     res.json({ message: `Event triggered: ${eventType}` });
