@@ -51,6 +51,17 @@ async function main() {
   app.use('/api/trading', createTradingRouter(simEngine));
   app.use('/api/reports', createReportsRouter());
 
+  // Root info route
+  app.get('/', (req, res) => {
+    res.json({
+      name: 'GridPulse Microgrid API & WebSocket Server',
+      status: 'online',
+      version: '1.0.0',
+      health: '/api/health',
+      simulation: simEngine.getState(),
+    });
+  });
+
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({
