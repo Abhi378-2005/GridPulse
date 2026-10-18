@@ -7,10 +7,11 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install -g pnpm@9.1.0 && pnpm install --frozen-lockfile && pnpm --filter @gridpulse/shared build && pnpm --filter @gridpulse/server build
+    buildCommand: npm install -g pnpm@9.1.0 && pnpm install && pnpm --filter @gridpulse/shared build && pnpm --filter @gridpulse/server build
     startCommand: node apps/server/dist/index.js
-    healthCheckPath: /api/health
     envVars:
+      - key: NODE_VERSION
+        value: '20'
       - key: MONGO_URL
         sync: false
       - key: JWT_SECRET
@@ -36,9 +37,11 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install -g pnpm@9.1.0 && pnpm install --frozen-lockfile && pnpm --filter @gridpulse/shared build && pnpm --filter @gridpulse/web build
+    buildCommand: npm install -g pnpm@9.1.0 && pnpm install && pnpm --filter @gridpulse/shared build && pnpm --filter @gridpulse/web build
     startCommand: npx pnpm --filter @gridpulse/web start
     envVars:
+      - key: NODE_VERSION
+        value: '20'
       - key: NEXT_PUBLIC_SERVER_URL
         sync: false
       - key: NODE_ENV
