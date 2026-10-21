@@ -129,6 +129,7 @@ export class SimulationEngine {
     }, SIM_DEFAULTS.TICK_INTERVAL_MS);
 
     console.log('▶️  Simulation started');
+    this.broadcastState();
   }
 
   /**
@@ -141,6 +142,7 @@ export class SimulationEngine {
       this.tickInterval = null;
     }
     console.log('⏸️  Simulation paused');
+    this.broadcastState();
   }
 
   /**
@@ -149,6 +151,7 @@ export class SimulationEngine {
   setSpeed(speed: number): void {
     this.speed = Math.max(SIM_DEFAULTS.MIN_SPEED, Math.min(SIM_DEFAULTS.MAX_SPEED, speed));
     console.log(`⏩ Speed set to ${this.speed}x`);
+    this.broadcastState();
   }
 
   /**
@@ -157,6 +160,12 @@ export class SimulationEngine {
   setMode(mode: DataMode): void {
     this.mode = mode;
     console.log(`📡 Mode set to ${mode}`);
+    this.broadcastState();
+  }
+
+  /** Tell every connected client the simulation state changed (a paused simulation sends no ticks). */
+  private broadcastState(): void {
+    this.io?.emit('simulation:state', this.getState());
   }
 
   /**

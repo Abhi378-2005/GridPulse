@@ -38,6 +38,13 @@ export class LedgerService {
    * INVARIANT: For every transaction, SUM(debits) = SUM(credits).
    */
   async settleTrade(settlement: TradeSettlement): Promise<{ tradeId: string } | null> {
+    // Round each part to the stored precision FIRST, then add them. Rounding the total on its
+    // own can differ from the sum of its rounded parts by Rs 0.0001, which would break
+    // the double-entry rule (debits must equal credits exactly).
+    const energyCost = settlement.energyCost.toDecimalPlaces(4);
+    const wheelingCharge = settlement.wheelingCharge.toDecimalPlaces(4);
+    const totalCost = energyCost.plus(wheelingCharge);
+
     const session = await mongoose.startSession();
 
     try {
@@ -55,8 +62,8 @@ export class LedgerService {
 
         // 2. Check buyer has sufficient balance (aggregate pipeline)
         const buyerBalance = await this.getWalletBalance(buyerWallet._id.toString(), session);
-        if (buyerBalance.lt(settlement.totalCost)) {
-          throw new Error(`Insufficient funds: ${buyerBalance.toFixed(4)} < ${settlement.totalCost.toFixed(4)}`);
+        if (buyerBalance.lt(totalCost)) {
+          throw new Error(`Insufficient funds: ${buyerBalance.toFixed(4)} < ${totalCost.toFixed(4)}`);
         }
 
         // 3. Create Trade record
@@ -69,7 +76,7 @@ export class LedgerService {
               sellerNodeId: settlement.sellerNodeId,
               clearingPrice: mongoose.Types.Decimal128.fromString(settlement.clearingPrice.toFixed(4)),
               quantityKwh: mongoose.Types.Decimal128.fromString(settlement.quantityKwh.toFixed(4)),
-              totalCost: mongoose.Types.Decimal128.fromString(settlement.totalCost.toFixed(4)),
+              totalCost: mongoose.Types.Decimal128.fromString(totalCost.toFixed(4)),
               co2AvoidedKg: mongoose.Types.Decimal128.fromString(settlement.co2AvoidedKg.toFixed(4)),
             },
           ],
@@ -92,7 +99,7 @@ export class LedgerService {
         await Posting.create(
           [
             {
-              amount: mongoose.Types.Decimal128.fromString(settlement.totalCost.toFixed(4)),
+              amount: mongoose.Types.Decimal128.fromString(totalCost.toFixed(4)),
               type: 'DEBIT',
               walletId: buyerWallet._id,
               transactionId: transaction._id,
@@ -105,13 +112,13 @@ export class LedgerService {
         await Posting.create(
           [
             {
-              amount: mongoose.Types.Decimal128.fromString(settlement.energyCost.toFixed(4)),
+              amount: mongoose.Types.Decimal128.fromString(energyCost.toFixed(4)),
               type: 'CREDIT',
               walletId: sellerWallet._id,
               transactionId: transaction._id,
             },
             {
-              amount: mongoose.Types.Decimal128.fromString(settlement.wheelingCharge.toFixed(4)),
+              amount: mongoose.Types.Decimal128.fromString(wheelingCharge.toFixed(4)),
               type: 'CREDIT',
               walletId: gridWallet._id,
               transactionId: transaction._id,

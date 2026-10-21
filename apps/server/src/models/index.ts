@@ -8,3 +8,4 @@ export { MeterReading, type IMeterReading } from './MeterReading';
 export { WeatherEvent, type IWeatherEvent } from './WeatherEvent';
 export { ApiCache, type IApiCache } from './ApiCache';
 export { User, type IUser } from './User';
+export { AuditLog, type IAuditLog } from './AuditLog';

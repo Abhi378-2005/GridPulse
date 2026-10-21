@@ -199,8 +199,9 @@ export class MatchingEngine {
       const deliveredKwh = quantityKwh.mul(1 - TRADING.TRANSMISSION_LOSS_PCT);
 
       // Total cost = energy cost + wheeling charge
-      const energyCost = clearingPrice.mul(quantityKwh);
-      const wheelingCharge = new Decimal(TRADING.WHEELING_CHARGE_PER_KWH).mul(quantityKwh);
+      // Each part is rounded to the 4 decimals the ledger stores, so the total is exactly their sum
+      const energyCost = clearingPrice.mul(quantityKwh).toDecimalPlaces(4);
+      const wheelingCharge = new Decimal(TRADING.WHEELING_CHARGE_PER_KWH).mul(quantityKwh).toDecimalPlaces(4);
       const totalCost = energyCost.plus(wheelingCharge);
 
       // CO₂ avoided by using P2P solar instead of grid power

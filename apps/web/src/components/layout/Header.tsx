@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { SimulationState, LiveWeatherData, DataMode } from '@gridpulse/shared';
 import { ThemeToggle } from '../ui/ThemeToggle';
@@ -165,6 +166,11 @@ export function Header({
         <div className="flex items-center gap-2 border-l pl-4">
           {userName ? (
             <>
+              {canControl && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/admin">🛠 Admin</Link>
+                </Button>
+              )}
               {hasHouse && (
                 <Button variant="outline" size="sm" onClick={onMyHouseClick}>🏠 My House</Button>
               )}

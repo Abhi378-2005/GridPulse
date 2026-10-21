@@ -72,6 +72,7 @@ export function useSocket() {
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('simulation:tick', onSimTick);
+    socket.on('simulation:state', setSimState); // Pause/resume/speed/mode changes (a paused simulation sends no ticks)
     socket.on('trade:executed', onTradeExecuted);
     socket.on('orderbook:update', onOrderBookUpdate);
     socket.on('metrics:update', onMetricsUpdate);
@@ -92,6 +93,7 @@ export function useSocket() {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('simulation:tick', onSimTick);
+      socket.off('simulation:state', setSimState);
       socket.off('trade:executed', onTradeExecuted);
       socket.off('orderbook:update', onOrderBookUpdate);
       socket.off('metrics:update', onMetricsUpdate);

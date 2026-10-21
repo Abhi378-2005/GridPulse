@@ -20,6 +20,8 @@ interface AuthResponse {
 export function useAuth() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  // False until the saved session (if any) has been checked, so pages don't flash a logged-out state
+  const [ready, setReady] = useState(false);
 
   const applySession = useCallback((t: string | null, u: AuthUser | null) => {
     setToken(t);
@@ -31,7 +33,10 @@ export function useAuth() {
   // Restore a saved session on load
   useEffect(() => {
     const saved = loadToken();
-    if (!saved) return;
+    if (!saved) {
+      setReady(true);
+      return;
+    }
     apiFetch<any>('/api/auth/me', saved)
       .then(me => applySession(saved, {
         id: me._id,
@@ -40,7 +45,8 @@ export function useAuth() {
         role: me.role,
         nodeId: me.nodeId?._id ?? me.nodeId ?? null,
       }))
-      .catch(() => applySession(null, null));
+      .catch(() => applySession(null, null))
+      .finally(() => setReady(true));
   }, [applySession]);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -61,5 +67,5 @@ export function useAuth() {
 
   const logout = useCallback(() => applySession(null, null), [applySession]);
 
-  return { token, user, isAdmin: user?.role === 'admin', login, register, logout };
+  return { token, user, ready, isAdmin: user?.role === 'admin', login, register, logout };
 }

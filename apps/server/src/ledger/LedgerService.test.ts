@@ -114,5 +114,51 @@ describe('LedgerService', () => {
       expect(result).toBeNull();
       expect(mockSession.endSession).toHaveBeenCalled();
     });
+
+    it('should post a debit exactly equal to the sum of its credits, even when parts round up', async () => {
+      const session = {
+        withTransaction: vi.fn(async (cb: () => Promise<void>) => { await cb(); }),
+        endSession: vi.fn(),
+      };
+      vi.spyOn(mongoose, 'startSession').mockResolvedValue(session as any);
+
+      const wallets: Record<string, { _id: mongoose.Types.ObjectId }> = {
+        buyer: { _id: new mongoose.Types.ObjectId() },
+        seller: { _id: new mongoose.Types.ObjectId() },
+        grid: { _id: new mongoose.Types.ObjectId() },
+      };
+      (Wallet.findOne as any).mockImplementation((q: any) => ({
+        session: () => (q.systemAccount ? wallets.grid : q.nodeId === 'buyer-node' ? wallets.buyer : wallets.seller),
+      }));
+      (Posting.aggregate as any).mockReturnValue({
+        session: vi.fn().mockResolvedValue([{ _id: 'CREDIT', total: '5000.0000' }]),
+      });
+      (Trade.create as any).mockResolvedValue([{ _id: new mongoose.Types.ObjectId() }]);
+      (Transaction.create as any).mockResolvedValue([{ _id: new mongoose.Types.ObjectId() }]);
+      (Posting.create as any).mockResolvedValue([]);
+
+      // Each part is X.XXXX5 so it rounds UP on its own; the exact total would round DOWN.
+      // Old behaviour: debit 0.0002 less than the credits.
+      const result = await ledgerService.settleTrade({
+        bidOrderId: 'b1',
+        askOrderId: 'a1',
+        buyerNodeId: 'buyer-node',
+        sellerNodeId: 'seller-node',
+        clearingPrice: new Decimal(5),
+        quantityKwh: new Decimal(1),
+        energyCost: new Decimal('1.00005'),
+        wheelingCharge: new Decimal('0.50005'),
+        totalCost: new Decimal('1.5001'),
+        co2AvoidedKg: new Decimal(0.7),
+      });
+
+      expect(result).not.toBeNull();
+      const posted = (Posting.create as any).mock.calls.flatMap((c: any[]) => c[0]) as Array<{ type: string; amount: { toString(): string } }>;
+      const sum = (type: string) =>
+        posted.filter(p => p.type === type).reduce((acc, p) => acc.plus(p.amount.toString()), new Decimal(0));
+
+      expect(sum('DEBIT').toFixed(4)).toBe(sum('CREDIT').toFixed(4));
+      expect(sum('DEBIT').toFixed(4)).toBe('1.5002');
+    });
   });
 });

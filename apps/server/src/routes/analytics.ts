@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { GridNode, Trade, MeterReading } from '../models';
 import { WalletService } from '../ledger/LedgerService';
+import { authenticateToken, requireAdmin, requireNodeAccess } from '../middleware/auth';
 
 /** Parse and clamp a numeric query param within safe bounds. */
 function parseIntParam(value: unknown, defaultVal: number, min: number, max: number): number {
@@ -55,7 +56,7 @@ export function createAnalyticsRouter(): Router {
   });
 
   // GET /api/analytics/balances
-  router.get('/balances', async (req, res) => {
+  router.get('/balances', authenticateToken, requireAdmin, async (req, res) => {
     try {
       const balances = await WalletService.getAllBalances();
       const result: Record<string, number> = {};
@@ -67,7 +68,7 @@ export function createAnalyticsRouter(): Router {
   });
 
   // GET /api/analytics/readings/:nodeId?limit=100&offset=0
-  router.get('/readings/:nodeId', async (req, res) => {
+  router.get('/readings/:nodeId', authenticateToken, requireNodeAccess, async (req, res) => {
     try {
       const { nodeId } = req.params;
       if (!nodeId || typeof nodeId !== 'string') {

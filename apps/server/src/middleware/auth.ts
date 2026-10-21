@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { User } from '../models';
 
 const DEV_FALLBACK_SECRET = 'gridpulse-dev-only-secret';
 if (!process.env.JWT_SECRET) {
@@ -49,7 +50,24 @@ export function generateToken(user: { id: string; email: string; role: string; n
   );
 }
 
-export function authenticateToken(req: Request, res: Response, next: NextFunction): void {
+/**
+ * Re-read the user's role and house from the database. A token only proves identity:
+ * if an admin demotes someone or reassigns their house, that must take effect at once,
+ * not when the token expires. Returns null if the user no longer exists.
+ */
+export async function loadCurrentUser(decoded: AuthUser): Promise<AuthUser | null> {
+  if (!mongoose.Types.ObjectId.isValid(decoded.userId)) return null;
+  const u = await User.findById(decoded.userId).select('email role nodeId').lean();
+  if (!u) return null;
+  return {
+    userId: decoded.userId,
+    email: u.email,
+    role: u.role,
+    nodeId: u.nodeId ? u.nodeId.toString() : null,
+  };
+}
+
+export async function authenticateToken(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
@@ -63,7 +81,20 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     res.status(401).json({ error: 'Invalid or expired token' });
     return;
   }
-  req.user = decoded;
+
+  let current: AuthUser | null = null;
+  try {
+    current = await loadCurrentUser(decoded);
+  } catch (error) {
+    console.error('Auth lookup failed:', error);
+    res.status(500).json({ error: 'Could not verify your account' });
+    return;
+  }
+  if (!current) {
+    res.status(401).json({ error: 'Account no longer exists' });
+    return;
+  }
+  req.user = current;
   next();
 }
 

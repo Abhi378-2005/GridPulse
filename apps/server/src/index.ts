@@ -11,6 +11,8 @@ import { createAnalyticsRouter } from './routes/analytics';
 import { createAuthRouter } from './routes/auth';
 import { createTradingRouter } from './routes/trading';
 import { createReportsRouter } from './routes/reports';
+import { createAdminRouter } from './routes/admin';
+import { bootstrapAdmin } from './config/bootstrapAdmin';
 
 dotenv.config({ path: '../../.env' });
 dotenv.config(); // Also check local .env
@@ -26,6 +28,7 @@ async function main() {
 
   // Connect to MongoDB
   await connectDB();
+  await bootstrapAdmin();
 
   // Express app
   const app = express();
@@ -50,6 +53,7 @@ async function main() {
   app.use('/api/auth', createAuthRouter());
   app.use('/api/trading', createTradingRouter(simEngine));
   app.use('/api/reports', createReportsRouter());
+  app.use('/api/admin', createAdminRouter(simEngine));
 
   // Root info route
   app.get('/', (req, res) => {

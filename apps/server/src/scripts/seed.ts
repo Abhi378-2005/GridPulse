@@ -1,5 +1,5 @@
 import { connectDB, disconnectDB } from '../config/database';
-import { GridNode, Wallet, Order, Trade, Transaction, Posting, MeterReading, WeatherEvent, ApiCache, User } from '../models';
+import { GridNode, Wallet, Order, Trade, Transaction, Posting, MeterReading, WeatherEvent, ApiCache, User, AuditLog } from '../models';
 import bcrypt from 'bcryptjs';
 import { HOUSE_CONFIGS, FINANCE } from '@gridpulse/shared';
 import mongoose from 'mongoose';
@@ -21,6 +21,7 @@ export async function seedDatabase(options: { clearExisting?: boolean } = { clea
     await Wallet.deleteMany({});
     await GridNode.deleteMany({});
     await User.deleteMany({}); // Users point at node IDs that are about to change
+  await AuditLog.deleteMany({}); // Entries reference users that were just deleted
 
     // Reset collection indexes to prevent stale constraint violations
     await Transaction.collection.dropIndexes().catch(() => {});
