@@ -38,7 +38,7 @@ export default function Dashboard() {
   } = useSocket();
 
   const { toasts, addToast, removeToast } = useToast();
-  const { token, user, isAdmin, login, register, logout } = useAuth();
+  const { token, user, isAdmin, login, logout } = useAuth();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isMyHouseOpen, setIsMyHouseOpen] = useState(false);
 
@@ -128,10 +128,8 @@ export default function Dashboard() {
 
       <AuthModal
         isOpen={isAuthOpen}
-        nodes={nodes}
         onClose={() => setIsAuthOpen(false)}
         onLogin={login}
-        onRegister={register}
       />
 
       {token && user?.nodeId && (
