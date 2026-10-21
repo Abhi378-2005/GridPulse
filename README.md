@@ -136,3 +136,5 @@ NEXT_PUBLIC_SERVER_URL=http://localhost:3001
 ## 📝 License
 
 MIT
+
+Contributors: @Abhi378-200 , @avaneeshn23
